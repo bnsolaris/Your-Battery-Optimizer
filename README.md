@@ -7,6 +7,10 @@ The Windows app source is in src. Run Derle.ps1 with Windows PowerShell to build
 the installer. The output is written to bin. Build output, intermediate files
 and local logs are excluded from Git.
 
+Run Yedekle.ps1 before editing project files to create a dated, verified ZIP
+in the adjacent Pil-Modu-Yedekler directory. Local builds also create a backup
+before starting. GitHub Actions builds use the committed source snapshot.
+
 Source edits can be reviewed and committed with GitHub Desktop. Push the commit
 to main to run the Build Windows installer workflow. When it succeeds, download
 Pil-Modu-Windows-Unsigned from that run's Artifacts section.

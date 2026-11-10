@@ -14,6 +14,25 @@ Başka bir proje klasörüne veya bu bilgisayardaki özel bir yola bağımlı de
 | src/app.manifest | Windows yönetici izni ve DPI bildirimleri |
 | src/Pil-Modu.ico | Uygulama logosu |
 | Derle.ps1 | EXE dosyalarını üretir |
+| Yedekle.ps1 | Kaynak ve kurulum dosyalarının tarihli, doğrulanmış ZIP yedeğini alır |
+| AGENTS.md | Kod üzerinde çalışırken değişiklik öncesi yedek alma kuralı |
+
+## Değişiklik öncesi yedek
+
+Kod veya belge düzenlemeye başlamadan önce Yedekle.ps1 dosyasını çalıştır.
+Örneğin PowerShell'de ./Yedekle.ps1 -Reason "Sözleşme düzenlemesi öncesi"
+komutunu kullanabilirsin.
+
+ZIP yedekleri kaynak klasörünün yanındaki Pil-Modu-Yedekler klasörüne yazılır.
+Her ZIP içinde project klasörü ve dosyaların SHA-256 değerlerini, yedek
+nedenini ve UTC zamanını içeren backup-manifest.json dosyası vardır.
+Dosyalar ZIP'ten tekrar okunarak bu değerlerle doğrulanır.
+
+Kaynaklar ve mevcut bin klasöründeki kurulum dosyaları yedeklenir.
+Git metaverisi, obj ara dosyaları, günlükler ve özel anahtar dosyaları
+yedeğe alınmaz. Yedek alma başarısızsa değişiklik veya derleme durdurulur.
+Yerel Derle.ps1 çalışmaları ayrıca otomatik yedek alır.
+Elle yapılan düzenlemelerden önce Yedekle.ps1 dosyasını kendin çalıştırmalısın.
 
 ## Derleme
 

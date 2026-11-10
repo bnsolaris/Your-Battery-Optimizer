@@ -120,6 +120,12 @@ $logPath = Join-Path $PSScriptRoot 'Derleme.log'
 $loggingStarted = $false
 $buildFailed = $false
 try {
+    if ($env:GITHUB_ACTIONS -ne 'true') {
+        $backupPath = & (Join-Path $PSScriptRoot 'Yedekle.ps1') -Reason 'Derleme öncesi'
+        if (-not $backupPath -or -not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
+            throw 'Doğrulanmış yedek oluşturulamadığı için derleme durduruldu.'
+        }
+    }
     Start-Transcript -LiteralPath $logPath -Force | Out-Null
     $loggingStarted = $true
     Write-Host 'Pil Modu derleniyor...'

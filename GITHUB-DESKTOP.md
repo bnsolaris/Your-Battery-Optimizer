@@ -8,13 +8,15 @@ Depo bnsolaris/Battery-Mode deposunun main dalına bağlıdır.
 
 ## Günlük güncelleme
 
-1. Kaynak dosyalarını bu klasörde düzenle ve kaydet.
-2. GitHub Desktop'ın Changes bölümünde değişiklikleri incele.
-3. Summary alanına değişikliği anlatan kısa bir açıklama yaz ve Commit to main
+1. Değişikliğe başlamadan önce Yedekle.ps1 dosyasını çalıştır. Tarihli ve
+   doğrulanmış ZIP, kaynak klasörünün yanındaki Pil-Modu-Yedekler klasörüne yazılır.
+2. Kaynak dosyalarını bu klasörde düzenle ve kaydet.
+3. GitHub Desktop'ın Changes bölümünde değişiklikleri incele.
+4. Summary alanına değişikliği anlatan kısa bir açıklama yaz ve Commit to main
    düğmesine bas. Bu, değişikliği bilgisayarındaki Git geçmişine kaydeder.
-4. Push origin düğmesine bas. Bu, commit'i GitHub'a gönderir.
-5. GitHub'daki Actions → Build Windows installer çalışmasının tamamlanmasını bekle.
-6. Çalışmanın Artifacts bölümünden Pil-Modu-Windows-Unsigned dosyasını indir.
+5. Push origin düğmesine bas. Bu, commit'i GitHub'a gönderir.
+6. GitHub'daki Actions → Build Windows installer çalışmasının tamamlanmasını bekle.
+7. Çalışmanın Artifacts bölümünden Pil-Modu-Windows-Unsigned dosyasını indir.
 
 Bu akışla EXE'yi elle derleyip GitHub'a yüklemek gerekmez. Kaydettiğin kaynak
 değişikliklerini Desktop'ta commit edip göndermen yeterlidir.
