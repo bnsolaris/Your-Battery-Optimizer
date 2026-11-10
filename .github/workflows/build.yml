@@ -1,0 +1,35 @@
+name: Build Windows installer
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build installer
+        shell: powershell
+        run: |
+          .\Derle.ps1 -NoPause
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Upload unsigned test installer
+        uses: actions/upload-artifact@v7
+        with:
+          name: Pil-Modu-Windows-Unsigned
+          path: bin/Pil-Modu-Setup-*.exe
+          if-no-files-found: error
+          retention-days: 14

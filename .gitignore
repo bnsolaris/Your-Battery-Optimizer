@@ -1,0 +1,13 @@
+/bin/
+/bin-imzali/
+/obj/
+*.log
+.vs/
+.vscode/
+*.user
+*.suo
+*.pfx
+*.p12
+*.key
+.DS_Store
+Thumbs.db
