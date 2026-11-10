@@ -20,6 +20,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Test wallpaper restore
+        shell: powershell
+        run: .\tests\Test-Wallpaper.ps1
+
       - name: Build installer
         shell: powershell
         run: |

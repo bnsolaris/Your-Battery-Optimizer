@@ -17,6 +17,14 @@ Dışarı Modu, cihazın desteklediği ayarları ayrı ayrı uygular. Ekran içi
 için %20 üst sınır hedeflenir. Pil güç modu ve tasarruf eşiği desteklendiğinde
 ayarlanır. Sonuç alanı uygulanan ve atlanan ayarları gösterir.
 
+Dışarı Modu masaüstü arka planını siyaha çevirir. Windows'un mevcut duvar
+kâğıdı dosyası, yerleşimi ve slayt gösterisi ayarları değiştirilmez. Normal
+Mod önceki arka plan rengini ve duvar kâğıdının açık/kapalı durumunu geri
+yükler. Dışarı Modu'na tekrar basmak ilk kaydı değiştirmez; uygulama kapansa
+da geri yükleme kaydı korunur. Duvar kâğıdını elle değiştirmeden önce Normal
+Mod'a dön. Wallpaper Engine gibi uygulamalar kendi içinden yönetilmelidir.
+Siyah arka planın pil tasarrufu etkisi özellikle OLED ekranlarda görülür.
+
 Normal Mod, kaydedilen önceki ayarları geri yükler. Geri dönmek için
 kaydedilen ekran veya ses cihazını yeniden bağlamak ya da önceki güç planını
 seçmek gerekebilir. Böyle bir durumda geri yükleme kaydı saklanır.

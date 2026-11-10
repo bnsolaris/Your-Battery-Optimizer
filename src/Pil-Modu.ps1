@@ -257,6 +257,69 @@ namespace PilModu {
         }
     }
 
+    [ComImport, Guid("B92B56A9-8B55-4E14-9A89-0199BBB6F93B"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface IDesktopWallpaper {
+        [PreserveSig] int SetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorId, [MarshalAs(UnmanagedType.LPWStr)] string wallpaper);
+        [PreserveSig] int GetWallpaper([MarshalAs(UnmanagedType.LPWStr)] string monitorId, [MarshalAs(UnmanagedType.LPWStr)] out string wallpaper);
+        [PreserveSig] int GetMonitorDevicePathAt(uint index, [MarshalAs(UnmanagedType.LPWStr)] out string monitorId);
+        [PreserveSig] int GetMonitorDevicePathCount(out uint count);
+        [PreserveSig] int GetMonitorRECT([MarshalAs(UnmanagedType.LPWStr)] string monitorId, out WallpaperRect rect);
+        [PreserveSig] int SetBackgroundColor(uint color);
+        [PreserveSig] int GetBackgroundColor(out uint color);
+        [PreserveSig] int SetPosition(int position);
+        [PreserveSig] int GetPosition(out int position);
+        [PreserveSig] int SetSlideshow(IntPtr items);
+        [PreserveSig] int GetSlideshow(out IntPtr items);
+        [PreserveSig] int SetSlideshowOptions(uint options, uint milliseconds);
+        [PreserveSig] int GetSlideshowOptions(out uint options, out uint milliseconds);
+        [PreserveSig] int AdvanceSlideshow([MarshalAs(UnmanagedType.LPWStr)] string monitorId, int direction);
+        [PreserveSig] int GetStatus(out uint state);
+        [PreserveSig] int Enable([MarshalAs(UnmanagedType.Bool)] bool enable);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct WallpaperRect { public int Left, Top, Right, Bottom; }
+
+    [ComImport, Guid("C2CF3110-460E-4FC1-B9D0-8A1C0C9CC4BD")]
+    class DesktopWallpaperComObject { }
+
+    public sealed class WallpaperState {
+        public uint Color { get; set; }
+        public bool Enabled { get; set; }
+    }
+
+    public static class NativeWallpaper {
+        private static WallpaperState ReadState(IDesktopWallpaper desktop) {
+            uint status, color;
+            Marshal.ThrowExceptionForHR(desktop.GetStatus(out status));
+            if ((status & 4) != 0)
+                throw new InvalidOperationException("Uzak oturumda duvar kâğıdı değişikliği atlandı.");
+            Marshal.ThrowExceptionForHR(desktop.GetBackgroundColor(out color));
+            return new WallpaperState { Color = color, Enabled = (status & 1) != 0 };
+        }
+
+        public static WallpaperState GetState() {
+            var desktop = (IDesktopWallpaper)new DesktopWallpaperComObject();
+            try { return ReadState(desktop); }
+            finally { Marshal.ReleaseComObject(desktop); }
+        }
+
+        public static void SetBackground(uint color, bool enabled) {
+            var desktop = (IDesktopWallpaper)new DesktopWallpaperComObject();
+            try {
+                ReadState(desktop);
+                Marshal.ThrowExceptionForHR(desktop.SetBackgroundColor(color));
+                // Disable the image instead of replacing it. Windows retains the
+                // wallpaper paths, placement and slideshow configuration for restore.
+                Marshal.ThrowExceptionForHR(desktop.Enable(enabled));
+                var actual = ReadState(desktop);
+                if (actual.Color != color || actual.Enabled != enabled)
+                    throw new InvalidOperationException("Windows arka plan değişikliğini uygulamadı.");
+            }
+            finally { Marshal.ReleaseComObject(desktop); }
+        }
+    }
+
     public enum EDataFlow { eRender, eCapture, eAll }
     public enum ERole { eConsole, eMultimedia, eCommunications }
 
@@ -457,6 +520,26 @@ New-Setting 'Saver' 'Enerji tasarrufu eşiği' {
     Write-Host "Pilde otomatik tasarruf eşiği: %$value"
 }
 
+New-Setting 'Wallpaper' 'Duvar kâğıdı' {
+    $current = [PilModu.NativeWallpaper]::GetState()
+    $value = if (-not $current.Enabled -and $current.Color -eq 0) {
+        'Black'
+    } else {
+        @{ Color = $current.Color; Enabled = $current.Enabled }
+    }
+    @{ Value = $value; Target = 'Black' }
+} {
+    param($entry, $value)
+    if ($value -is [string] -and $value -eq 'Black') {
+        [PilModu.NativeWallpaper]::SetBackground(0, $false)
+        Write-Host 'Duvar kâğıdı: siyah arka plan.'
+    }
+    else {
+        [PilModu.NativeWallpaper]::SetBackground([uint32]$value.Color, [bool]$value.Enabled)
+        Write-Host 'Duvar kâğıdı: önceki arka plan geri yüklendi.'
+    }
+}
+
 function Invoke-Profile {
     if ($Mode -ne 'Durum' -and (Test-Path -LiteralPath $statePath)) {
         $saved = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
@@ -473,7 +556,7 @@ function Invoke-Profile {
     $completed = 0
     $settingIds = if ($Mode -eq 'Normal') {
         # Restore the saver threshold before the configured power mode.
-        'Saver', 'Power', 'Audio', 'Brightness', 'Display'
+        'Saver', 'Power', 'Audio', 'Brightness', 'Display', 'Wallpaper'
     } else { $steps.Keys }
     foreach ($id in $settingIds) {
         $step = $steps[$id]

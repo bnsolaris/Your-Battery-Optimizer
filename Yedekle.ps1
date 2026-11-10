@@ -1,13 +1,14 @@
 ﻿[CmdletBinding()]
 param(
     [string]$Reason = 'Manuel yedek',
-    [string]$SourceRoot = $PSScriptRoot,
+    [string]$SourceRoot,
     [string]$BackupRoot
 )
 
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 
+if (-not $SourceRoot) { $SourceRoot = $PSScriptRoot }
 $source = (Resolve-Path -LiteralPath $SourceRoot).Path.TrimEnd('\')
 if (-not $BackupRoot) {
     $BackupRoot = Join-Path (Split-Path -Parent $source) 'Pil-Modu-Yedekler'

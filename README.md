@@ -1,6 +1,14 @@
 # Battery-Mode
 Battery Mode helps extend Windows laptop battery life with one-click power profiles. Adjust supported screen refresh rate, brightness, volume, and power settings from the app or system tray, then restore your previous settings with Normal mode.
 
+Outside mode also shows a solid black desktop background. Normal mode restores
+the previous background color and re-enables the wallpaper if it was enabled.
+Windows keeps the image, placement and slideshow configuration; the app does
+not replace or delete wallpaper files. Repeated Outside mode clicks keep the
+original restore point, including after an app restart. Restore with Normal
+mode before manually changing your wallpaper. Third-party animated wallpapers
+are controlled by their own apps.
+
 ## Development
 
 The Windows app source is in src. Run Derle.ps1 with Windows PowerShell to build
