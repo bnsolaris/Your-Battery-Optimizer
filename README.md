@@ -29,3 +29,5 @@ trusted certificate or an approved signing service.
 
 See KAYNAK-REHBERI.md for a source-file guide and IMZALAMA.md for the local
 certificate signing workflow.
+
+Made with ChatGPT
