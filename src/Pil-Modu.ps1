@@ -450,6 +450,48 @@ function Test-Battery {
     }
 }
 
+function Get-PanelBrightness([string]$Id) {
+    $panels = @(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness |
+        Where-Object { $_.Active -and $_.InstanceName -eq $Id })
+    if ($panels.Count -ne 1 -or $null -eq $panels[0].CurrentBrightness) {
+        throw 'Kaydedilen dahili ekranın parlaklığı okunamadı.'
+    }
+    $brightness = [int]$panels[0].CurrentBrightness
+    if ($brightness -lt 0 -or $brightness -gt 100) { throw 'Ekran geçersiz bir parlaklık değeri bildirdi.' }
+    return $brightness
+}
+
+function Set-PanelBrightness([string]$Id, [int]$Value) {
+    if ($Value -lt 0 -or $Value -gt 100) { throw 'Parlaklık %0 ile %100 arasında olmalı.' }
+    # A previous attempt may have applied the setting without a return code.
+    # Confirm the actual panel value before issuing another request.
+    if ((Get-PanelBrightness $Id) -eq $Value) { return }
+    $panel = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods |
+        Where-Object { $_.Active -and $_.InstanceName -eq $Id } | Select-Object -First 1
+    if (-not $panel) { throw 'Kaydedilen dahili ekran erişilebilir değil.' }
+
+    $change = $null
+    $methodError = $null
+    try {
+        $change = Invoke-CimMethod -InputObject $panel -MethodName WmiSetBrightness -Arguments @{
+            Timeout = [uint32]0; Brightness = [byte]$Value
+        }
+    }
+    catch { $methodError = $_.Exception.Message }
+
+    $actual = $null
+    for ($attempt = 0; $attempt -lt 11; $attempt++) {
+        $actual = Get-PanelBrightness $Id
+        if ($actual -eq $Value) { return }
+        if ($attempt -lt 10) { Start-Sleep -Milliseconds 100 }
+    }
+    if ($methodError) { throw "Parlaklık isteği tamamlanamadı: $methodError" }
+    if ($null -ne $change -and $null -ne $change.ReturnValue -and $change.ReturnValue -ne 0) {
+        throw "Ekran sürücüsü parlaklık isteğini reddetti ($($change.ReturnValue)). Geçerli parlaklık: %$actual."
+    }
+    throw "Parlaklık doğrulanamadı. İstenen: %$Value; ekrandan okunan: %$actual. Geri yükleme kaydı korundu."
+}
+
 New-Setting 'Display' 'Yenileme hızı' {
     $id = [PilModu.NativeDisplay]::GetSingleDisplayId()
     if (-not $id) { throw 'Kimliği okunabilen tek bir ekran bağlı olmalı.' }
@@ -472,13 +514,7 @@ New-Setting 'Brightness' 'Parlaklık' {
     @{ Id = $panels[0].InstanceName; Value = $current; Target = $target }
 } {
     param($entry, $value)
-    $panel = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods |
-        Where-Object { $_.Active -and $_.InstanceName -eq $entry.Id } | Select-Object -First 1
-    if (-not $panel) { throw 'Kaydedilen dahili ekran erişilebilir değil.' }
-    $change = Invoke-CimMethod -InputObject $panel -MethodName WmiSetBrightness -Arguments @{
-        Timeout = [uint32]0; Brightness = [byte]$value
-    }
-    if ($change.ReturnValue -ne 0) { throw "Ekran sürücüsü parlaklık isteğini reddetti ($($change.ReturnValue))." }
+    Set-PanelBrightness $entry.Id ([int]$value)
     Write-Host "Parlaklık: %$value"
 }
 

@@ -27,7 +27,7 @@ Sağlayıcın farklı bir zaman damgası hizmeti öneriyorsa TimestampServer
 parametresini kullan. Windows PowerShell 5.1 için HTTP adresi gerekir.
 Varsayılan adres http://timestamp.digicert.com olarak ayarlanmıştır.
 
-İmzalı paket bin-imzali/Pil-Modu-Setup-0.3.1.exe yoluna yazılır.
+İmzalı paket bin-imzali/Pil-Modu-Setup-0.3.3.exe yoluna yazılır.
 Normal Derle.ps1, bin klasöründe imzasız paket üretmeye devam eder.
 Derleme sonucu ve hatalar Derleme.log dosyasında görülür.
 

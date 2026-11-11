@@ -103,12 +103,12 @@ function Invoke-PilModuBuild {
     foreach ($name in $runtimeFiles + @('Pil-Modu.ico', 'README.txt')) {
         $resources += "/resource:$(Join-Path $intermediate $name),$name"
     }
-    $builtInstaller = Join-Path $intermediate 'Pil-Modu-Setup-0.3.1.exe'
+    $builtInstaller = Join-Path $intermediate 'Pil-Modu-Setup-0.3.3.exe'
     Invoke-PilModuCompiler ($common + @("/out:$builtInstaller") + $resources + @((Join-Path $source 'Kurulum.cs')))
     if ($Sign) { Set-PilModuSignature $builtInstaller $certificate $TimestampServer }
 
     [void][IO.Directory]::CreateDirectory($outputFolder)
-    $installer = Join-Path $outputFolder 'Pil-Modu-Setup-0.3.1.exe'
+    $installer = Join-Path $outputFolder 'Pil-Modu-Setup-0.3.3.exe'
     if ([IO.File]::Exists($installer)) {
         [IO.File]::Replace($builtInstaller, $installer, [NullString]::Value)
     }

@@ -1,14 +1,22 @@
-﻿Pil Modu 0.3.1
+﻿Pil Modu 0.3.3
 
 Windows 10 22H2 ve Windows 11 için pil, güç ve ekran profilleri.
 
 Kurulum
 
-Pil-Modu-Setup-0.3.1.exe dosyasını aç ve Windows yönetici iznini onayla.
+Pil-Modu-Setup-0.3.3.exe dosyasını aç ve Windows yönetici iznini onayla.
 Sihirbazın varsayılan kurulum konumu C:\Program Files\PilModu klasörüdür.
 Windows başka bir sürücüde kuruluysa o sistemin Program Files yolu kullanılır.
 Başlat menüsünden veya kurulum sonunda oluşturabileceğin masaüstü
 kısayolundan Pil Modu'nu aç. Uygulama da yönetici izni ister.
+
+Dosyaları elle sildikten sonra yeniden kurulum
+
+Kurucu, kayıtlı konumda uygulama dosyalarının kalmadığını doğrularsa eski
+Windows kurulum kaydını yenileyerek yeniden kurabilir. Uygulamaya ait kalan
+kısayollar yenilenir. Gizli .pilmodu-install dosyası tek başına kalmışsa ve
+eski kayıtla eşleşiyorsa aynı klasör kullanılabilir. Başka dosyalar kalmışsa
+yeni veya boş bir klasör seç. Önceki ayarların geri yükleme kaydı korunur.
 
 Kullanım
 
@@ -28,6 +36,8 @@ Siyah arka planın pil tasarrufu etkisi özellikle OLED ekranlarda görülür.
 Normal Mod, kaydedilen önceki ayarları geri yükler. Geri dönmek için
 kaydedilen ekran veya ses cihazını yeniden bağlamak ya da önceki güç planını
 seçmek gerekebilir. Böyle bir durumda geri yükleme kaydı saklanır.
+Parlaklık ayarı ekrandan okunarak doğrulanır. Değer zaten eski hâline
+dönmüşse tekrar komut gönderilmeden geri yükleme tamamlanır.
 
 Pencereyi kapatınca uygulama saatin yanındaki pil simgesinde kalır.
 Simgeye sağ tıklayarak mod değiştirebilir veya Çıkış'ı seçebilirsin.

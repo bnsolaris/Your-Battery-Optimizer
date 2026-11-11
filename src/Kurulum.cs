@@ -11,8 +11,8 @@ using Microsoft.Win32;
 
 [assembly: AssemblyTitle("Pil Modu")]
 [assembly: AssemblyProduct("Pil Modu")]
-[assembly: AssemblyVersion("0.3.1.0")]
-[assembly: AssemblyFileVersion("0.3.1.0")]
+[assembly: AssemblyVersion("0.3.3.0")]
+[assembly: AssemblyFileVersion("0.3.3.0")]
 
 internal static class Program
 {
@@ -90,13 +90,13 @@ internal static class Program
         }
     }
 #else
-    internal static void Install(string folder)
+    internal static string Install(string folder)
     {
         bool ownsEvent;
         using (var appEvent = new EventWaitHandle(false, EventResetMode.AutoReset, AppLock, out ownsEvent))
         {
             if (!ownsEvent) throw new InvalidOperationException("Pil Modu açıksa önce simge menüsünden Çıkış'ı seç.");
-            InstallFiles.Install(folder);
+            return InstallFiles.Install(folder);
         }
     }
 #endif
@@ -105,9 +105,10 @@ internal static class Program
 internal static class InstallFiles
 {
     internal const string AppName = "Pil Modu";
-    internal const string Version = "0.3.1";
+    internal const string Version = "0.3.3";
     internal const string Entry = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\PilModu.WindowsProfile";
     internal const string Marker = ".pilmodu-install";
+    internal static string RecoveredFolder { get; private set; }
     internal static readonly string PowerShell = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
     internal static readonly string[] Payload = {
         "PilModu.exe", "PilModu.Native.dll", "PilModu.Visuals.dll", "Pil-Modu-Uygulamasi.ps1",
@@ -124,7 +125,7 @@ internal static class InstallFiles
         }
     }
 
-    internal static string ValidateFolder(string input)
+    private static string NormalizeFolder(string input)
     {
         if (string.IsNullOrWhiteSpace(input) || !Path.IsPathRooted(input) ||
             input.Length < 3 || input[1] != ':' || (input[2] != '\\' && input[2] != '/'))
@@ -140,15 +141,97 @@ internal static class InstallFiles
             if (File.Exists(node.FullName) || (node.Exists && (node.Attributes & FileAttributes.ReparsePoint) != 0))
                 throw new InvalidOperationException("Kurulum yolu bir dosya veya klasör bağlantısı içeriyor.");
         }
-        if (Directory.Exists(path) && Directory.GetFileSystemEntries(path).Length != 0)
-            throw new InvalidOperationException("Yeni veya boş bir kurulum klasörü seç.");
+        return path;
+    }
+
+    internal static string ValidateFolder(string input, string recoveredFolder = null, string recoveredId = null)
+    {
+        string path = NormalizeFolder(input);
+        if (Directory.Exists(path))
+        {
+            string[] contents = Directory.GetFileSystemEntries(path);
+            bool onlyOldMarker = contents.Length == 1 &&
+                string.Equals(path, recoveredFolder, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(Path.GetFileName(contents[0]), Marker, StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrEmpty(recoveredId) && File.ReadAllText(contents[0]) == recoveredId;
+            if (contents.Length != 0 && !onlyOldMarker)
+                throw new InvalidOperationException("Yeni veya boş bir kurulum klasörü seç. Yalnızca eski kurulum işareti kalmışsa aynı klasörü kullanabilirsin.");
+        }
         if (!Directory.Exists(Path.GetDirectoryName(path)) &&
             !string.Equals(path, DefaultFolder, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("Üst klasörü önce oluştur veya var olan bir üst klasör seç.");
         return path;
     }
 
-    internal static void Install(string input)
+    internal static string ValidateOrphanedRegistration(string folder, string installId)
+    {
+        string path = NormalizeFolder(folder);
+        // Enumerating also surfaces access errors instead of treating them as
+        // evidence that an installation has been deleted.
+        bool directoryExists;
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) == 0)
+                throw new InvalidOperationException("Eski kurulum klasörünün yerinde bir dosya var.");
+            directoryExists = true;
+        }
+        catch (FileNotFoundException) { directoryExists = false; }
+        catch (DirectoryNotFoundException) { directoryExists = false; }
+        if (directoryExists)
+        {
+            string[] contents = Directory.GetFileSystemEntries(path);
+            foreach (string item in contents)
+                foreach (string name in Payload)
+                    if (string.Equals(Path.GetFileName(item), name, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Bu kullanıcıda Pil Modu dosyaları hâlâ mevcut. Önce kurulum klasöründeki Uninstall.exe ile kaldır. Eksik veya bozuk bir kurulum varsa klasörü yeniden adlandırıp bu kurulumu tekrar çalıştır.");
+        }
+        string marker = Path.Combine(path, Marker);
+        if (Directory.Exists(marker) || (File.Exists(marker) &&
+            (((File.GetAttributes(marker) & FileAttributes.ReparsePoint) != 0) ||
+             string.IsNullOrEmpty(installId) || File.ReadAllText(marker) != installId)))
+            throw new InvalidOperationException("Eski kurulum işareti Windows kaydıyla uyuşmuyor. Kurulum klasörünü yeniden adlandırıp tekrar dene.");
+        return path;
+    }
+
+    private sealed class SavedRegistration
+    {
+        internal readonly System.Collections.Generic.Dictionary<string, object> Values =
+            new System.Collections.Generic.Dictionary<string, object>();
+        internal readonly System.Collections.Generic.Dictionary<string, RegistryValueKind> Kinds =
+            new System.Collections.Generic.Dictionary<string, RegistryValueKind>();
+        internal string Folder;
+        internal string Id;
+
+        internal static SavedRegistration Read()
+        {
+            using (var key = Registry.CurrentUser.OpenSubKey(Entry))
+            {
+                if (key == null) return null;
+                var result = new SavedRegistration();
+                foreach (string name in key.GetValueNames())
+                {
+                    result.Values[name] = key.GetValue(name, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+                    result.Kinds[name] = key.GetValueKind(name);
+                }
+                result.Folder = Convert.ToString(key.GetValue("InstallLocation"));
+                result.Id = Convert.ToString(key.GetValue("InstallId"));
+                return result;
+            }
+        }
+
+        internal void Restore()
+        {
+            using (var key = Registry.CurrentUser.CreateSubKey(Entry))
+            {
+                foreach (string name in key.GetValueNames())
+                    if (!Values.ContainsKey(name)) key.DeleteValue(name, false);
+                foreach (var item in Values) key.SetValue(item.Key, item.Value, Kinds[item.Key]);
+            }
+        }
+    }
+
+    internal static string Install(string input)
     {
         using (var windows = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows NT\CurrentVersion"))
         {
@@ -156,16 +239,25 @@ internal static class InstallFiles
             if (windows == null || !int.TryParse(Convert.ToString(windows.GetValue("CurrentBuildNumber")), out build) || build < 19045)
                 throw new InvalidOperationException("Windows 10 22H2 veya Windows 11 gerekli.");
         }
-        using (var current = Registry.CurrentUser.OpenSubKey(Entry))
-            if (current != null) throw new InvalidOperationException("Bu kullanıcıda Pil Modu zaten kurulu. Önce mevcut sürümü kaldır.");
-
-        string path = ValidateFolder(input);
+        RecoveredFolder = null;
+        var previous = SavedRegistration.Read();
+        string oldFolder = previous == null ? null : ValidateOrphanedRegistration(previous.Folder, previous.Id);
+        string path = ValidateFolder(input, oldFolder, previous == null ? null : previous.Id);
         string menu = ShortcutPath(Environment.SpecialFolder.Programs);
-        AssertShortcutFree(menu);
+        AssertShortcutFree(menu, oldFolder ?? path);
+        byte[] previousMenu = File.Exists(menu) ? File.ReadAllBytes(menu) : null;
+        string marker = Path.Combine(path, Marker);
+        byte[] previousMarker = File.Exists(marker) ? File.ReadAllBytes(marker) : null;
         bool createdFolder = !Directory.Exists(path);
+        object previousOwnership;
+        bool ownedFolder = createdFolder || (previous != null &&
+            string.Equals(path, oldFolder, StringComparison.OrdinalIgnoreCase) &&
+            previous.Values.TryGetValue("CreatedFolder", out previousOwnership) &&
+            previousOwnership is int && (int)previousOwnership == 1);
         var createdFiles = new System.Collections.Generic.List<string>();
         bool registered = false;
         bool menuCreated = false;
+        bool markerWritten = false;
         try
         {
             Directory.CreateDirectory(path);
@@ -180,11 +272,12 @@ internal static class InstallFiles
                     inputStream.CopyTo(output);
                 }
             }
-            string marker = Path.Combine(path, Marker);
-            using (var writer = new StreamWriter(new FileStream(marker, FileMode.CreateNew, FileAccess.Write)))
+            using (var markerStream = new FileStream(marker, previousMarker == null ? FileMode.CreateNew : FileMode.Open, FileAccess.Write))
             {
-                createdFiles.Add(marker);
-                writer.Write(id);
+                if (previousMarker == null) createdFiles.Add(marker);
+                markerWritten = true;
+                markerStream.SetLength(0);
+                using (var writer = new StreamWriter(markerStream)) writer.Write(id);
             }
             using (var registry = Registry.CurrentUser.CreateSubKey(Entry))
             {
@@ -193,20 +286,29 @@ internal static class InstallFiles
                 registry.SetValue("DisplayVersion", Version);
                 registry.SetValue("InstallLocation", path);
                 registry.SetValue("InstallId", id);
-                registry.SetValue("CreatedFolder", createdFolder ? 1 : 0);
+                registry.SetValue("CreatedFolder", ownedFolder ? 1 : 0);
                 registry.SetValue("DisplayIcon", Path.Combine(path, "Pil-Modu.ico"));
                 registry.SetValue("UninstallString", "\"" + Path.Combine(path, "Uninstall.exe") + "\"");
                 registry.SetValue("NoModify", 1);
                 registry.SetValue("NoRepair", 1);
             }
-            CreateShortcut(menu, path);
+            CreateShortcut(menu, path, oldFolder);
             menuCreated = true;
+            RecoveredFolder = oldFolder;
+            return path;
         }
         catch
         {
-            if (menuCreated) TryRollback(() => File.Delete(menu));
-            if (registered) TryRollback(() => Registry.CurrentUser.DeleteSubKey(Entry, false));
+            if (menuCreated) TryRollback(() => {
+                if (previousMenu == null) File.Delete(menu);
+                else File.WriteAllBytes(menu, previousMenu);
+            });
+            if (registered) TryRollback(() => {
+                if (previous == null) Registry.CurrentUser.DeleteSubKey(Entry, false);
+                else previous.Restore();
+            });
             foreach (string file in createdFiles) TryRollback(() => File.Delete(file));
+            if (markerWritten && previousMarker != null) TryRollback(() => File.WriteAllBytes(marker, previousMarker));
             if (createdFolder) TryRollback(() => Directory.Delete(path, false));
             throw;
         }
@@ -227,15 +329,41 @@ internal static class InstallFiles
         return Path.Combine(path, AppName + ".lnk");
     }
 
-    private static void AssertShortcutFree(string shortcutPath)
+    internal static bool IsOwnedShortcutTarget(string target, string arguments, string folder)
     {
-        if (File.Exists(shortcutPath) || Directory.Exists(shortcutPath))
-            throw new InvalidOperationException("Aynı adlı bir kısayol zaten var: " + shortcutPath);
+        if (string.IsNullOrEmpty(folder)) return false;
+        bool native = string.Equals(target, Path.Combine(folder, "PilModu.exe"), StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrEmpty(arguments);
+        string legacyArguments = "-WindowStyle Hidden -NoLogo -NoProfile -STA -ExecutionPolicy RemoteSigned -File \"" +
+            Path.Combine(folder, "Pil-Modu-Uygulamasi.ps1") + "\"";
+        return native || (string.Equals(target, PowerShell, StringComparison.OrdinalIgnoreCase) && arguments == legacyArguments);
     }
 
-    internal static void CreateShortcut(string shortcutPath, string folder)
+    private static void AssertShortcutFree(string shortcutPath, string replaceFromFolder)
     {
-        AssertShortcutFree(shortcutPath);
+        if (!File.Exists(shortcutPath) && !Directory.Exists(shortcutPath)) return;
+        if (!Directory.Exists(shortcutPath) &&
+            (File.GetAttributes(shortcutPath) & FileAttributes.ReparsePoint) == 0)
+        {
+            dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", true));
+            dynamic shortcut = null;
+            try
+            {
+                shortcut = shell.CreateShortcut(shortcutPath);
+                if (IsOwnedShortcutTarget((string)shortcut.TargetPath, (string)shortcut.Arguments, replaceFromFolder)) return;
+            }
+            finally
+            {
+                if (shortcut != null) Marshal.ReleaseComObject(shortcut);
+                Marshal.ReleaseComObject(shell);
+            }
+        }
+        throw new InvalidOperationException("Aynı adlı başka bir kısayol zaten var: " + shortcutPath);
+    }
+
+    internal static void CreateShortcut(string shortcutPath, string folder, string replaceFromFolder = null)
+    {
+        AssertShortcutFree(shortcutPath, replaceFromFolder ?? folder);
         dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", true));
         string temporary = Path.Combine(Path.GetDirectoryName(shortcutPath), "PilModu-" + Guid.NewGuid().ToString("N") + ".lnk");
         try
@@ -248,7 +376,9 @@ internal static class InstallFiles
             shortcut.Description = AppName;
             shortcut.WindowStyle = 7;
             shortcut.Save();
-            File.Move(temporary, shortcutPath);
+            AssertShortcutFree(shortcutPath, replaceFromFolder ?? folder);
+            if (File.Exists(shortcutPath)) File.Replace(temporary, shortcutPath, null);
+            else File.Move(temporary, shortcutPath);
         }
         finally
         {
@@ -426,7 +556,9 @@ internal sealed class SetupWindow : Form
             heading.Text = "Kurulum tamamlandı";
             next.Text = "Bitir";
             for (int i = 0; i < 3; i++) rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            rows.Controls.Add(Description("Pil Modu'nu Başlat menüsünden açabilirsin."), 0, 0);
+            rows.Controls.Add(Description(InstallFiles.RecoveredFolder == null
+                ? "Pil Modu'nu Başlat menüsünden açabilirsin."
+                : "Dosyaları silinen önceki kurulumun kaydı yenilendi. Pil Modu'nu Başlat menüsünden açabilirsin."), 0, 0);
             readme.Text = "README dosyasını aç";
             readme.AutoSize = true;
             readme.Checked = true;
@@ -457,15 +589,14 @@ internal sealed class SetupWindow : Form
             }
             else if (step == 1)
             {
-                installedFolder = InstallFiles.ValidateFolder(path.Text);
-                Program.Install(installedFolder);
+                installedFolder = Program.Install(path.Text);
                 ShowPage(2);
             }
             else
             {
                 if (desktop.Checked)
                 {
-                    InstallFiles.CreateShortcut(InstallFiles.ShortcutPath(Environment.SpecialFolder.DesktopDirectory), installedFolder);
+                    InstallFiles.CreateShortcut(InstallFiles.ShortcutPath(Environment.SpecialFolder.DesktopDirectory), installedFolder, InstallFiles.RecoveredFolder);
                     desktop.Checked = false;
                 }
                 if (readme.Checked)

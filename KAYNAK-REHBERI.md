@@ -38,7 +38,7 @@ Elle yapılan düzenlemelerden önce Yedekle.ps1 dosyasını kendin çalıştır
 
 Windows PowerShell'de bu klasöre geçip ./Derle.ps1 dosyasını çalıştır.
 Windows .NET Framework C# derleyicisi kullanılır.
-Derlenen kurulum dosyası bin/Pil-Modu-Setup-0.3.1.exe yoluna yazılır.
+Derlenen kurulum dosyası bin/Pil-Modu-Setup-0.3.3.exe yoluna yazılır.
 Ara dosyalar obj klasörüne yazılır.
 
 Derle.ps1 dosyasını sağ tıklayıp PowerShell ile çalıştır seçeneğini de
