@@ -4,5 +4,5 @@
     [switch]$NoPause
 )
 
-& (Join-Path $PSScriptRoot 'Derle.ps1') -Sign -CertificateThumbprint $CertificateThumbprint -TimestampServer $TimestampServer -NoPause:$NoPause
+& (Join-Path $PSScriptRoot 'Build.ps1') -Sign -CertificateThumbprint $CertificateThumbprint -TimestampServer $TimestampServer -NoPause:$NoPause
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

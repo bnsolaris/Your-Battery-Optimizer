@@ -39,7 +39,7 @@ if ($files.Count -eq 0) { throw 'Yedeklenecek dosya bulunamadı.' }
 
 [void][IO.Directory]::CreateDirectory($destination)
 $stamp = [DateTime]::UtcNow.ToString("yyyy-MM-dd_HH-mm-ss'Z'")
-$name = 'Pil-Modu_' + $stamp + '_' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.zip'
+$name = 'Your-Battery-Optimizer_' + $stamp + '_' + [guid]::NewGuid().ToString('N').Substring(0, 8) + '.zip'
 $finalPath = Join-Path $destination $name
 $pendingPath = $finalPath + '.partial'
 $records = [Collections.Generic.List[object]]::new()

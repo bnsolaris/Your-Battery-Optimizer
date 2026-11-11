@@ -1,7 +1,9 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
+. (Join-Path $root 'src\Localization.ps1')
+$translations = Import-Translations (Join-Path $root 'src') 'en'
 $profileAst = $null
-foreach ($name in @('src\Pil-Modu.ps1', 'Pil-Modu-Kaldirma-Yardimcisi.ps1')) {
+foreach ($name in @('src\Apply-PowerProfile.ps1', 'Repair-Uninstall.ps1')) {
     $errors = $null
     $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root $name), [ref]$null, [ref]$errors)
     if ($errors.Count) { throw ($errors | Out-String) }
@@ -10,7 +12,7 @@ foreach ($name in @('src\Pil-Modu.ps1', 'Pil-Modu-Kaldirma-Yardimcisi.ps1')) {
             . ([scriptblock]::Create($definition.Extent.Text))
         }
     }
-    if ($name -eq 'src\Pil-Modu.ps1') { $profileAst = $ast }
+    if ($name -eq 'src\Apply-PowerProfile.ps1') { $profileAst = $ast }
 }
 
 # Mock only the Windows provider. Test the real brightness step and journal
@@ -51,7 +53,7 @@ $statePath = Join-Path $stateDirectory 'onceki-ayarlar.json'
 $backupRoot = Join-Path $stateDirectory 'backups'
 [void][IO.Directory]::CreateDirectory($stateDirectory)
 $steps = [ordered]@{}
-$DisariParlaklik = 30
+$AwayBrightness = 30
 foreach ($id in 'Display', 'Audio', 'Power', 'Saver', 'Wallpaper') {
     New-Setting $id $id { @{ Value = 0; Target = 0 } } { throw 'An unrelated setting was changed.' }
 }
@@ -77,8 +79,54 @@ function Run-Normal {
     $journal = @{}
     Invoke-Profile
 }
+function Run-Mode([string]$RequestedMode) {
+    $Mode = $RequestedMode
+    $journal = @{}
+    Invoke-Profile
+}
 
 try {
+    $expectedLabels = @{
+        'en-GB' = 'Brightness'
+        'tr-TR' = 'Parlaklık'
+        'ru-RU' = 'Яркость'
+        'es-MX' = 'Brillo'
+        'de-DE' = 'Brightness'
+    }
+    foreach ($locale in $expectedLabels.Keys) {
+        $translations = Import-Translations (Join-Path $root 'src') $locale
+        Assert ((Get-Text 'Brightness') -ceq $expectedLabels[$locale]) "Unexpected language for $locale"
+        Assert ((Get-Text 'BrightnessValue' @(40)).Contains('40')) "Missing formatted value for $locale"
+    }
+    $translations = Import-Translations (Join-Path $root 'src') 'en'
+
+    Reset-Case 70
+    [IO.File]::Delete($statePath)
+    $script:audioReads = 0
+    $steps.Audio.Read = {
+        $script:audioReads++
+        @{ Value = 0; Target = 0 }
+    }
+    $DisabledSettings = @('Display', 'Audio', 'Power', 'Saver', 'Wallpaper')
+    $AwayBrightness = 27
+    Run-Mode 'Away'
+    Assert ($brightness -eq 20 -and $audioReads -eq 0) 'The brightness limit or disabled action was ignored.'
+    $AwayBrightness = 40
+    Run-Mode 'Away'
+    $original = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
+    Assert ($brightness -eq 40 -and $original.Brightness.Value -eq 70) 'The new target did not preserve the original value.'
+    $DisabledSettings = @($steps.Keys)
+    $AwayBrightness = 10
+    Run-Mode 'Away'
+    Assert ($brightness -eq 40 -and $writes -eq 2 -and (Test-Path -LiteralPath $statePath)) 'Disabling an action changed its value or discarded its restore record.'
+    $report = (Run-Mode 'Status' 6>&1 | Out-String)
+    Assert ($report.Contains('Brightness: 40%') -and $writes -eq 2) 'Overview did not read the actual brightness without writing.'
+    Run-Normal
+    Assert ($brightness -eq 70 -and $writes -eq 3 -and -not (Test-Path -LiteralPath $statePath)) 'Normal mode did not restore an action that was disabled later.'
+    $DisabledSettings = @()
+    $AwayBrightness = 30
+    $steps.Audio.Read = { @{ Value = 0; Target = 0 } }
+
     Reset-Case 40
     Run-Normal
     Assert ($writes -eq 0 -and -not (Test-Path -LiteralPath $statePath)) 'Already-restored brightness was not accepted.'

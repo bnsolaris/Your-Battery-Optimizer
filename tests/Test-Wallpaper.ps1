@@ -1,5 +1,8 @@
 $ErrorActionPreference = 'Stop'
-$profilePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'src\Pil-Modu.ps1'
+$source = Join-Path (Split-Path -Parent $PSScriptRoot) 'src'
+. (Join-Path $source 'Localization.ps1')
+$translations = Import-Translations $source 'en'
+$profilePath = Join-Path $source 'Apply-PowerProfile.ps1'
 $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($profilePath, [ref]$null, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
@@ -51,7 +54,7 @@ $wallpaper = $ast.Find({
         $node.CommandElements[1].Value -eq 'Wallpaper'
 }, $true)
 if (-not $wallpaper) { throw 'Wallpaper setting was not registered.' }
-. ([scriptblock]::Create($wallpaper.Extent.Text.Replace('[PilModu.NativeWallpaper]', '[PilModuWallpaperTestNative]')))
+. ([scriptblock]::Create($wallpaper.Extent.Text.Replace('[BatteryOptimizer.NativeWallpaper]', '[PilModuWallpaperTestNative]')))
 [PilModuWallpaperTestNative]::BeforeWrite = {
     if (-not (Test-Path -LiteralPath $statePath)) { throw 'Desktop changed before saving its restore point.' }
     $saved = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
@@ -78,9 +81,9 @@ try {
         $expectedEnabled = $initialEnabled
         [PilModuWallpaperTestNative]::Color = $expectedColor
         [PilModuWallpaperTestNative]::Enabled = $expectedEnabled
-        Invoke-TestProfile 'Disari'
+        Invoke-TestProfile 'Away'
         Assert-Desktop 0 $false
-        Invoke-TestProfile 'Disari'
+        Invoke-TestProfile 'Away'
         Assert-Desktop 0 $false
         Invoke-TestProfile 'Normal'
         Assert-Desktop $expectedColor $expectedEnabled
@@ -91,8 +94,8 @@ try {
     [PilModuWallpaperTestNative]::Color = 0
     [PilModuWallpaperTestNative]::Enabled = $false
     $writes = [PilModuWallpaperTestNative]::Writes
-    Invoke-TestProfile 'Disari'
-    Invoke-TestProfile 'Durum'
+    Invoke-TestProfile 'Away'
+    Invoke-TestProfile 'Status'
     Invoke-TestProfile 'Normal'
     if ((Test-Path -LiteralPath $statePath) -or [PilModuWallpaperTestNative]::Writes -ne $writes) {
         throw 'An already-black desktop was changed unnecessarily.'
@@ -102,7 +105,7 @@ try {
     $expectedEnabled = $true
     [PilModuWallpaperTestNative]::Color = $expectedColor
     [PilModuWallpaperTestNative]::Enabled = $expectedEnabled
-    Invoke-TestProfile 'Disari'
+    Invoke-TestProfile 'Away'
     [PilModuWallpaperTestNative]::FailNextWrite = $true
     $failedRestore = $false
     try { Invoke-TestProfile 'Normal' } catch { $failedRestore = $true }
@@ -115,7 +118,7 @@ try {
 
     # A failed apply must also retain the original state for Normal mode.
     [PilModuWallpaperTestNative]::FailNextWrite = $true
-    Invoke-TestProfile 'Disari'
+    Invoke-TestProfile 'Away'
     if (-not (Test-Path -LiteralPath $statePath)) { throw 'A failed apply lost the restore point.' }
     Invoke-TestProfile 'Normal'
     Assert-Desktop $expectedColor $expectedEnabled

@@ -32,16 +32,20 @@ jobs:
         shell: powershell
         run: .\tests\Test-Brightness.ps1
 
+      - name: Test saved profile settings
+        shell: powershell
+        run: .\tests\Test-ProfileSettings.ps1
+
       - name: Build installer
         shell: powershell
         run: |
-          .\Derle.ps1 -NoPause
+          .\Build.ps1 -NoPause
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Upload unsigned test installer
         uses: actions/upload-artifact@v7
         with:
-          name: Pil-Modu-Windows-Unsigned
-          path: bin/Pil-Modu-Setup-*.exe
+          name: Your-Battery-Optimizer-Windows-Unsigned
+          path: bin/Your-Battery-Optimizer-Setup-*.exe
           if-no-files-found: error
           retention-days: 14

@@ -1,61 +1,70 @@
-﻿Pil Modu 0.3.3
+﻿Your Battery Optimizer 0.5.0
 
-Windows 10 22H2 ve Windows 11 için pil, güç ve ekran profilleri.
+Battery, power and display profiles for Windows 10 22H2 and Windows 11.
 
-Kurulum
+Installation
 
-Pil-Modu-Setup-0.3.3.exe dosyasını aç ve Windows yönetici iznini onayla.
-Sihirbazın varsayılan kurulum konumu C:\Program Files\PilModu klasörüdür.
-Windows başka bir sürücüde kuruluysa o sistemin Program Files yolu kullanılır.
-Başlat menüsünden veya kurulum sonunda oluşturabileceğin masaüstü
-kısayolundan Pil Modu'nu aç. Uygulama da yönetici izni ister.
+Open Your-Battery-Optimizer-Setup-0.5.0.exe and approve the administrator
+prompt. Setup starts in the Windows display language if supported. You can
+choose English, Turkish, Russian or Spanish on the first page. The app and
+uninstaller use the language selected in setup.
 
-Dosyaları elle sildikten sonra yeniden kurulum
+The default folder is C:\Program Files\Your Battery Optimizer. If Windows
+uses another drive, setup uses that system's Program Files location.
+Launch the app from the Start menu or the optional desktop shortcut.
 
-Kurucu, kayıtlı konumda uygulama dosyalarının kalmadığını doğrularsa eski
-Windows kurulum kaydını yenileyerek yeniden kurabilir. Uygulamaya ait kalan
-kısayollar yenilenir. Gizli .pilmodu-install dosyası tek başına kalmışsa ve
-eski kayıtla eşleşiyorsa aynı klasör kullanılabilir. Başka dosyalar kalmışsa
-yeni veya boş bir klasör seç. Önceki ayarların geri yükleme kaydı korunur.
+If files from an older installation still exist, restore your settings
+with its Normal mode and run its Uninstall.exe before installing this
+version. If you manually deleted the files, setup can recover the old
+Windows entry after confirming that its application files are absent.
 
-Kullanım
+Using the app
 
-Dışarı Modu, cihazın desteklediği ayarları ayrı ayrı uygular. Ekran için
-60 Hz'e yakın daha düşük bir hız, dahili panel için %30 parlaklık ve ses
-için %20 üst sınır hedeflenir. Pil güç modu ve tasarruf eşiği desteklendiğinde
-ayarlanır. Sonuç alanı uygulanan ve atlanan ayarları gösterir.
+Overview reads your current Windows values when you open the app. Use
+Refresh after making changes in Windows. Unavailable readings are marked
+in the list.
 
-Dışarı Modu masaüstü arka planını siyaha çevirir. Windows'un mevcut duvar
-kâğıdı dosyası, yerleşimi ve slayt gösterisi ayarları değiştirilmez. Normal
-Mod önceki arka plan rengini ve duvar kâğıdının açık/kapalı durumunu geri
-yükler. Dışarı Modu'na tekrar basmak ilk kaydı değiştirmez; uygulama kapansa
-da geri yükleme kaydı korunur. Duvar kâğıdını elle değiştirmeden önce Normal
-Mod'a dön. Wallpaper Engine gibi uygulamalar kendi içinden yönetilmelidir.
-Siyah arka planın pil tasarrufu etkisi özellikle OLED ekranlarda görülür.
+Open Settings to enable or disable each action. You can set the refresh
+rate, brightness, volume and energy saver threshold, and choose a
+battery power mode. The default targets are 60 Hz, 30% brightness and
+20% volume. Save your choices and select Away mode to apply them.
+The result area shows which settings were applied or skipped.
+Settings are saved for the current Windows account.
 
-Normal Mod, kaydedilen önceki ayarları geri yükler. Geri dönmek için
-kaydedilen ekran veya ses cihazını yeniden bağlamak ya da önceki güç planını
-seçmek gerekebilir. Böyle bir durumda geri yükleme kaydı saklanır.
-Parlaklık ayarı ekrandan okunarak doğrulanır. Değer zaten eski hâline
-dönmüşse tekrar komut gönderilmeden geri yükleme tamamlanır.
+The refresh rate, brightness and volume targets use supported values
+without exceeding the original settings. If the display cannot reach the
+requested brightness limit, Away mode uses its lowest available value.
+Turning an action off skips it the next time you select Away mode.
+Normal mode restores every setting recorded before it was changed.
 
-Pencereyi kapatınca uygulama saatin yanındaki pil simgesinde kalır.
-Simgeye sağ tıklayarak mod değiştirebilir veya Çıkış'ı seçebilirsin.
-Pencerenin boyutunu kenarlarından değiştirebilir veya büyütebilirsin.
+Away mode sets a solid black desktop background. Windows retains the
+wallpaper, layout and slideshow settings. Normal mode restores the
+previous background. Return to Normal mode before changing your wallpaper
+manually. Third-party wallpaper tools manage their own backgrounds.
+The battery benefit of a black background is most noticeable on OLED.
 
-Kaldırma
+Normal mode restores the saved settings. If a screen or audio device was
+disconnected or the power plan changed, reconnect the saved device or
+select the previous plan and try again. The restore record is kept until
+those settings are restored. Brightness is verified against the value
+reported by the display.
 
-Önce Normal Mod ile ayarlarını geri yükle ve pil simgesinin menüsünden
-Çıkış'ı seç. Kurulum klasöründeki Uninstall.exe dosyasını aç veya Windows
-Ayarlar > Uygulamalar bölümünden Pil Modu'nu kaldır. Yönetici izni gerekir.
-Kaldırıcı kurulan dosyaları, kısayolları ve kendi dosyasını kalıcı siler.
+Closing the window keeps the app in the notification area. Right-click
+the battery icon to switch modes or select Exit to close the app.
 
-Uyumluluk
+Uninstalling
 
-Özellikler Windows ve sürücü desteğine bağlıdır. Birden fazla ekran
-bağlıysa yenileme hızı adımı atlanır. Üreticiye özel PredatorSense Eko
-gibi profiller ayrıca üreticinin uygulamasından ayarlanır.
+Restore settings with Normal mode, then select Exit in the notification
+area. Run Uninstall.exe from the installation folder or use Windows
+Settings > Apps. Administrator permissions are required. The uninstaller
+removes the installed files and owned shortcuts.
 
-Dosya imzalarını Windows dosya özelliklerindeki Dijital İmzalar bölümünden
-kontrol edebilirsin. İmza durumu, paketin nasıl derlendiğine bağlıdır.
-Windows Uygulama Denetimi veya kurum ilkeleri çalıştırmayı engelleyebilir.
+Compatibility and signatures
+
+Windows and driver support determines which settings can be changed.
+Refresh rate is skipped when more than one display is connected. Vendor
+profiles such as PredatorSense Eco are managed by the vendor's app.
+
+Check Digital Signatures in the file's Windows properties to see the
+package's signature status. Smart App Control and organizational policies
+may block unsigned builds.

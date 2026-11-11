@@ -49,10 +49,13 @@ function Convert-PilModuRuntimeCode([string]$ScriptName, [string]$TypeMarker, [s
 
 function Invoke-PilModuBuild {
     $source = Join-Path $PSScriptRoot 'src'
-    $outputFolder = Join-Path $PSScriptRoot $(if ($Sign) { 'bin-imzali' } else { 'bin' })
+    $outputFolder = Join-Path $PSScriptRoot $(if ($Sign) { 'bin-signed' } else { 'bin' })
     $intermediate = Join-Path $PSScriptRoot ('obj\build-' + [guid]::NewGuid().ToString('N'))
     $windows = [Environment]::GetFolderPath('Windows')
     $compiler = Join-Path $windows 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+    $productCode = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $source 'Product.cs')
+    if ($productCode -notmatch 'const string Version = "(\d+\.\d+\.\d+)";') { throw 'Product version is missing.' }
+    $setupName = "Your-Battery-Optimizer-Setup-$($Matches[1]).exe"
     if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
         $compiler = Join-Path $windows 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
     }
@@ -64,7 +67,7 @@ function Invoke-PilModuBuild {
     }
     $certificate = $null
     if ($Sign) {
-        . (Join-Path $PSScriptRoot 'Imzalama.ps1')
+        . (Join-Path $PSScriptRoot 'Signing.ps1')
         $timestampUri = [uri]$TimestampServer
         if (-not $timestampUri.IsAbsoluteUri -or $timestampUri.Scheme -ne 'http') {
             throw 'Windows PowerShell 5.1 için sağlayıcının http:// ile başlayan zaman damgası adresini kullan.'
@@ -76,39 +79,44 @@ function Invoke-PilModuBuild {
     foreach ($file in Get-ChildItem -LiteralPath $source -Filter '*.ps1') {
         [void](Get-PilModuAst (Get-Content -Raw -Encoding UTF8 -LiteralPath $file.FullName))
     }
-    Convert-PilModuRuntimeCode 'Pil-Modu.ps1' 'namespace PilModu' 'PilModu.Native.dll'
-    Convert-PilModuRuntimeCode 'Pil-Modu-Uygulamasi.ps1' 'class PilModuVisuals' 'PilModu.Visuals.dll'
-    $removeCode = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $source 'Kaldir.ps1')
-    [IO.File]::WriteAllText((Join-Path $intermediate 'Kaldir.ps1'), $removeCode, [Text.Encoding]::UTF8)
-    foreach ($name in 'Pil-Modu.ico', 'README.txt') {
+    Convert-PilModuRuntimeCode 'Apply-PowerProfile.ps1' 'namespace BatteryOptimizer' 'BatteryOptimizer.Native.dll'
+    foreach ($name in 'Uninstall.ps1', 'Localization.ps1') {
+        $code = Get-Content -Raw -Encoding UTF8 -LiteralPath (Join-Path $source $name)
+        [IO.File]::WriteAllText((Join-Path $intermediate $name), $code, [Text.Encoding]::UTF8)
+    }
+    foreach ($name in 'BatteryOptimizer.ico', 'Translations.json', 'README.txt') {
         Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $intermediate $name)
     }
     $common = @('/nologo', '/warn:4', '/warnaserror', '/codepage:65001', '/target:winexe', '/platform:anycpu',
         "/win32manifest:$(Join-Path $source 'app.manifest')",
-        "/win32icon:$(Join-Path $source 'Pil-Modu.ico')",
-        '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:Microsoft.CSharp.dll')
-    $launcher = Join-Path $intermediate 'PilModu.exe'
-    Invoke-PilModuCompiler ($common + @("/out:$launcher", (Join-Path $source 'Baslatici.cs')))
+        "/win32icon:$(Join-Path $source 'BatteryOptimizer.ico')",
+        '/r:System.Windows.Forms.dll', '/r:System.Drawing.dll', '/r:Microsoft.CSharp.dll', '/r:System.Web.Extensions.dll')
+    $sharedSources = @((Join-Path $source 'Product.cs'), (Join-Path $source 'Localization.cs'))
+    $catalogResource = "/resource:$(Join-Path $intermediate 'Translations.json'),Translations.json"
+    $app = Join-Path $intermediate 'YourBatteryOptimizer.exe'
+    $appSources = foreach ($name in 'App.cs', 'ProfileSettings.cs', 'SettingsPage.cs') { Join-Path $source $name }
+    Invoke-PilModuCompiler ($common + @("/out:$app", $catalogResource) + $sharedSources + $appSources)
     $uninstaller = Join-Path $intermediate 'Uninstall.exe'
-    Invoke-PilModuCompiler ($common + @('/define:UNINSTALL', "/out:$uninstaller", (Join-Path $source 'Kurulum.cs')))
+    Invoke-PilModuCompiler ($common + @('/define:UNINSTALL', "/out:$uninstaller", $catalogResource) +
+        $sharedSources + @((Join-Path $source 'Setup.cs')))
 
-    $runtimeFiles = @('PilModu.exe', 'Uninstall.exe', 'PilModu.Native.dll', 'PilModu.Visuals.dll',
-        'Pil-Modu-Uygulamasi.ps1', 'Pil-Modu.ps1', 'Kaldir.ps1')
+    $runtimeFiles = @('YourBatteryOptimizer.exe', 'Uninstall.exe', 'BatteryOptimizer.Native.dll',
+        'Apply-PowerProfile.ps1', 'Uninstall.ps1', 'Localization.ps1')
     if ($Sign) {
         foreach ($name in $runtimeFiles) {
             Set-PilModuSignature (Join-Path $intermediate $name) $certificate $TimestampServer
         }
     }
     $resources = @()
-    foreach ($name in $runtimeFiles + @('Pil-Modu.ico', 'README.txt')) {
+    foreach ($name in $runtimeFiles + @('BatteryOptimizer.ico', 'Translations.json', 'README.txt')) {
         $resources += "/resource:$(Join-Path $intermediate $name),$name"
     }
-    $builtInstaller = Join-Path $intermediate 'Pil-Modu-Setup-0.3.3.exe'
-    Invoke-PilModuCompiler ($common + @("/out:$builtInstaller") + $resources + @((Join-Path $source 'Kurulum.cs')))
+    $builtInstaller = Join-Path $intermediate $setupName
+    Invoke-PilModuCompiler ($common + @("/out:$builtInstaller") + $resources + $sharedSources + @((Join-Path $source 'Setup.cs')))
     if ($Sign) { Set-PilModuSignature $builtInstaller $certificate $TimestampServer }
 
     [void][IO.Directory]::CreateDirectory($outputFolder)
-    $installer = Join-Path $outputFolder 'Pil-Modu-Setup-0.3.3.exe'
+    $installer = Join-Path $outputFolder $setupName
     if ([IO.File]::Exists($installer)) {
         [IO.File]::Replace($builtInstaller, $installer, [NullString]::Value)
     }
@@ -116,19 +124,19 @@ function Invoke-PilModuBuild {
     return $installer
 }
 
-$logPath = Join-Path $PSScriptRoot 'Derleme.log'
+$logPath = Join-Path $PSScriptRoot 'Build.log'
 $loggingStarted = $false
 $buildFailed = $false
 try {
     if ($env:GITHUB_ACTIONS -ne 'true') {
-        $backupPath = & (Join-Path $PSScriptRoot 'Yedekle.ps1') -Reason 'Derleme öncesi'
+        $backupPath = & (Join-Path $PSScriptRoot 'Backup.ps1') -Reason 'Before local build'
         if (-not $backupPath -or -not (Test-Path -LiteralPath $backupPath -PathType Leaf)) {
             throw 'Doğrulanmış yedek oluşturulamadığı için derleme durduruldu.'
         }
     }
     Start-Transcript -LiteralPath $logPath -Force | Out-Null
     $loggingStarted = $true
-    Write-Host 'Pil Modu derleniyor...'
+    Write-Host 'Building Your Battery Optimizer...'
     $resultPath = Invoke-PilModuBuild
     Write-Host ''
     Write-Host 'Derleme tamamlandı.' -ForegroundColor Green

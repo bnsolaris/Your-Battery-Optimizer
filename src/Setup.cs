@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -8,28 +9,36 @@ using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 using Microsoft.Win32;
-
-[assembly: AssemblyTitle("Pil Modu")]
-[assembly: AssemblyProduct("Pil Modu")]
-[assembly: AssemblyVersion("0.3.3.0")]
-[assembly: AssemblyFileVersion("0.3.3.0")]
+using BatteryOptimizer;
 
 internal static class Program
 {
-    private const string AppLock = @"Local\PilModu.General.Window";
-
     [DllImport("user32.dll")]
     private static extern bool SetProcessDPIAware();
 
     [STAThread]
     private static int Main(string[] args)
     {
-        if (args.Length == 1 && args[0] == "--verify")
+        bool verify = args.Length == 1 && args[0] == "--verify";
+        try
+        {
+#if UNINSTALL
+            UiText.Load(verify ? "en" : UiText.InstalledLanguage());
+#else
+            UiText.Load(CultureInfo.CurrentUICulture.Name);
+#endif
+        }
+        catch (Exception ex)
+        {
+            if (!verify) MessageBox.Show(ex.Message, Product.Name, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            return 1;
+        }
+        if (verify)
         {
             try
             {
 #if UNINSTALL
-                if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Kaldir.ps1"))) return 2;
+                if (!File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Product.UninstallScript))) return 2;
 #else
                 foreach (string name in InstallFiles.Payload)
                     using (var stream = Resource(name))
@@ -56,7 +65,7 @@ internal static class Program
     internal static Stream Resource(string name)
     {
         var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(name);
-        if (stream == null) throw new InvalidOperationException("Paket dosyası eksik: " + name);
+        if (stream == null) throw new InvalidOperationException(UiText.Get("PackageMissing", name));
         return stream;
     }
 
@@ -64,15 +73,15 @@ internal static class Program
     private static void RunUninstaller()
     {
         var answer = MessageBox.Show(
-            "Pil Modu'nun kurduğu dosyalar ve kısayollar kalıcı olarak silinecek. Devam edilsin mi?",
-            "Pil Modu'nu kaldır", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+            UiText.Get("UninstallConfirm"), UiText.Get("UninstallTitle"),
+            MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
         if (answer != DialogResult.Yes) return;
 
         try
         {
-            string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Kaldir.ps1");
+            string script = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, Product.UninstallScript);
             if (!File.Exists(script))
-                throw new FileNotFoundException("Kaldırma dosyası bulunamadı.", script);
+                throw new FileNotFoundException(UiText.Get("UninstallScriptMissing"), script);
             var start = new ProcessStartInfo
             {
                 FileName = InstallFiles.PowerShell,
@@ -82,20 +91,21 @@ internal static class Program
             };
             start.EnvironmentVariables["PILMODU_REMOVE_DIR"] = AppDomain.CurrentDomain.BaseDirectory;
             start.EnvironmentVariables["PILMODU_REMOVE_PID"] = Process.GetCurrentProcess().Id.ToString();
+            start.EnvironmentVariables["YBO_LANGUAGE"] = UiText.Language;
             using (Process.Start(start)) { }
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, "Kaldırıcı başlatılamadı", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(ex.Message, UiText.Get("UninstallStartFailed"), MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 #else
     internal static string Install(string folder)
     {
         bool ownsEvent;
-        using (var appEvent = new EventWaitHandle(false, EventResetMode.AutoReset, AppLock, out ownsEvent))
+        using (var appEvent = new EventWaitHandle(false, EventResetMode.AutoReset, Product.WindowEvent, out ownsEvent))
         {
-            if (!ownsEvent) throw new InvalidOperationException("Pil Modu açıksa önce simge menüsünden Çıkış'ı seç.");
+            if (!ownsEvent) throw new InvalidOperationException(UiText.Get("AppOpen"));
             return InstallFiles.Install(folder);
         }
     }
@@ -104,13 +114,15 @@ internal static class Program
 
 internal static class InstallFiles
 {
-    internal const string AppName = "Pil Modu";
-    internal const string Version = "0.3.3";
-    internal const string Entry = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\PilModu.WindowsProfile";
+    internal const string Entry = Product.Registration;
     internal const string Marker = ".pilmodu-install";
     internal static string RecoveredFolder { get; private set; }
-    internal static readonly string PowerShell = Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+    internal static readonly string PowerShell = Product.PowerShell;
     internal static readonly string[] Payload = {
+        Product.Executable, "BatteryOptimizer.Native.dll", Product.WorkerScript, Product.UninstallScript,
+        "Localization.ps1", Product.TranslationsFile, Product.IconFile, "README.txt", "Uninstall.exe"
+    };
+    internal static readonly string[] LegacyPayload = {
         "PilModu.exe", "PilModu.Native.dll", "PilModu.Visuals.dll", "Pil-Modu-Uygulamasi.ps1",
         "Pil-Modu.ps1", "Kaldir.ps1", "Pil-Modu.ico", "README.txt", "Uninstall.exe"
     };
@@ -121,7 +133,7 @@ internal static class InstallFiles
         {
             string programs = Environment.GetEnvironmentVariable("ProgramW6432") ??
                 Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
-            return Path.Combine(programs, "PilModu");
+            return Path.Combine(programs, Product.Name);
         }
     }
 
@@ -129,17 +141,17 @@ internal static class InstallFiles
     {
         if (string.IsNullOrWhiteSpace(input) || !Path.IsPathRooted(input) ||
             input.Length < 3 || input[1] != ':' || (input[2] != '\\' && input[2] != '/'))
-            throw new InvalidOperationException("Yerel bir sürücüde tam klasör yolu seç.");
+            throw new InvalidOperationException(UiText.Get("InvalidFolder"));
 
         string path = Path.GetFullPath(input.Trim()).TrimEnd('\\');
         string root = Path.GetPathRoot(path + "\\");
         if (path.Length <= 2 || new DriveInfo(root).DriveType != DriveType.Fixed || path.Length > 205)
-            throw new InvalidOperationException("Yerel bir diskte kısa ve uygulamaya ayrılmış bir klasör seç.");
+            throw new InvalidOperationException(UiText.Get("LocalFolder"));
 
         for (var node = new DirectoryInfo(path); node != null; node = node.Parent)
         {
             if (File.Exists(node.FullName) || (node.Exists && (node.Attributes & FileAttributes.ReparsePoint) != 0))
-                throw new InvalidOperationException("Kurulum yolu bir dosya veya klasör bağlantısı içeriyor.");
+                throw new InvalidOperationException(UiText.Get("LinkedFolder"));
         }
         return path;
     }
@@ -155,11 +167,11 @@ internal static class InstallFiles
                 string.Equals(Path.GetFileName(contents[0]), Marker, StringComparison.OrdinalIgnoreCase) &&
                 !string.IsNullOrEmpty(recoveredId) && File.ReadAllText(contents[0]) == recoveredId;
             if (contents.Length != 0 && !onlyOldMarker)
-                throw new InvalidOperationException("Yeni veya boş bir kurulum klasörü seç. Yalnızca eski kurulum işareti kalmışsa aynı klasörü kullanabilirsin.");
+                throw new InvalidOperationException(UiText.Get("EmptyFolder"));
         }
         if (!Directory.Exists(Path.GetDirectoryName(path)) &&
             !string.Equals(path, DefaultFolder, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("Üst klasörü önce oluştur veya var olan bir üst klasör seç.");
+            throw new InvalidOperationException(UiText.Get("ParentMissing"));
         return path;
     }
 
@@ -173,7 +185,7 @@ internal static class InstallFiles
         {
             var attributes = File.GetAttributes(path);
             if ((attributes & FileAttributes.Directory) == 0)
-                throw new InvalidOperationException("Eski kurulum klasörünün yerinde bir dosya var.");
+                throw new InvalidOperationException(UiText.Get("OldFolderFile"));
             directoryExists = true;
         }
         catch (FileNotFoundException) { directoryExists = false; }
@@ -182,15 +194,18 @@ internal static class InstallFiles
         {
             string[] contents = Directory.GetFileSystemEntries(path);
             foreach (string item in contents)
-                foreach (string name in Payload)
-                    if (string.Equals(Path.GetFileName(item), name, StringComparison.OrdinalIgnoreCase))
-                        throw new InvalidOperationException("Bu kullanıcıda Pil Modu dosyaları hâlâ mevcut. Önce kurulum klasöründeki Uninstall.exe ile kaldır. Eksik veya bozuk bir kurulum varsa klasörü yeniden adlandırıp bu kurulumu tekrar çalıştır.");
+            {
+                string fileName = Path.GetFileName(item);
+                if (Array.Exists(Payload, name => string.Equals(fileName, name, StringComparison.OrdinalIgnoreCase)) ||
+                    Array.Exists(LegacyPayload, name => string.Equals(fileName, name, StringComparison.OrdinalIgnoreCase)))
+                    throw new InvalidOperationException(UiText.Get("ExistingInstall"));
+            }
         }
         string marker = Path.Combine(path, Marker);
         if (Directory.Exists(marker) || (File.Exists(marker) &&
             (((File.GetAttributes(marker) & FileAttributes.ReparsePoint) != 0) ||
              string.IsNullOrEmpty(installId) || File.ReadAllText(marker) != installId)))
-            throw new InvalidOperationException("Eski kurulum işareti Windows kaydıyla uyuşmuyor. Kurulum klasörünü yeniden adlandırıp tekrar dene.");
+            throw new InvalidOperationException(UiText.Get("MarkerMismatch"));
         return path;
     }
 
@@ -237,7 +252,7 @@ internal static class InstallFiles
         {
             int build;
             if (windows == null || !int.TryParse(Convert.ToString(windows.GetValue("CurrentBuildNumber")), out build) || build < 19045)
-                throw new InvalidOperationException("Windows 10 22H2 veya Windows 11 gerekli.");
+                throw new InvalidOperationException(UiText.Get("WindowsRequired"));
         }
         RecoveredFolder = null;
         var previous = SavedRegistration.Read();
@@ -282,12 +297,13 @@ internal static class InstallFiles
             using (var registry = Registry.CurrentUser.CreateSubKey(Entry))
             {
                 registered = true;
-                registry.SetValue("DisplayName", AppName);
-                registry.SetValue("DisplayVersion", Version);
+                registry.SetValue("DisplayName", Product.Name);
+                registry.SetValue("DisplayVersion", Product.Version);
+                registry.SetValue("Language", UiText.Language);
                 registry.SetValue("InstallLocation", path);
                 registry.SetValue("InstallId", id);
                 registry.SetValue("CreatedFolder", ownedFolder ? 1 : 0);
-                registry.SetValue("DisplayIcon", Path.Combine(path, "Pil-Modu.ico"));
+                registry.SetValue("DisplayIcon", DisplayIcon(path));
                 registry.SetValue("UninstallString", "\"" + Path.Combine(path, "Uninstall.exe") + "\"");
                 registry.SetValue("NoModify", 1);
                 registry.SetValue("NoRepair", 1);
@@ -325,15 +341,21 @@ internal static class InstallFiles
     {
         string path = Environment.GetFolderPath(folder);
         if (string.IsNullOrWhiteSpace(path))
-            throw new InvalidOperationException("Windows kısayol klasörünü bildirmedi.");
-        return Path.Combine(path, AppName + ".lnk");
+            throw new InvalidOperationException(UiText.Get("ShortcutFolderMissing"));
+        return Path.Combine(path, Product.Name + ".lnk");
+    }
+
+    internal static string DisplayIcon(string folder)
+    {
+        return "\"" + Path.Combine(folder, Product.Executable) + "\",0";
     }
 
     internal static bool IsOwnedShortcutTarget(string target, string arguments, string folder)
     {
         if (string.IsNullOrEmpty(folder)) return false;
-        bool native = string.Equals(target, Path.Combine(folder, "PilModu.exe"), StringComparison.OrdinalIgnoreCase) &&
-            string.IsNullOrEmpty(arguments);
+        bool native = string.IsNullOrEmpty(arguments) &&
+            (string.Equals(target, Path.Combine(folder, Product.Executable), StringComparison.OrdinalIgnoreCase) ||
+             string.Equals(target, Path.Combine(folder, "PilModu.exe"), StringComparison.OrdinalIgnoreCase));
         string legacyArguments = "-WindowStyle Hidden -NoLogo -NoProfile -STA -ExecutionPolicy RemoteSigned -File \"" +
             Path.Combine(folder, "Pil-Modu-Uygulamasi.ps1") + "\"";
         return native || (string.Equals(target, PowerShell, StringComparison.OrdinalIgnoreCase) && arguments == legacyArguments);
@@ -358,22 +380,22 @@ internal static class InstallFiles
                 Marshal.ReleaseComObject(shell);
             }
         }
-        throw new InvalidOperationException("Aynı adlı başka bir kısayol zaten var: " + shortcutPath);
+        throw new InvalidOperationException(UiText.Get("ShortcutCollision", shortcutPath));
     }
 
     internal static void CreateShortcut(string shortcutPath, string folder, string replaceFromFolder = null)
     {
         AssertShortcutFree(shortcutPath, replaceFromFolder ?? folder);
         dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("WScript.Shell", true));
-        string temporary = Path.Combine(Path.GetDirectoryName(shortcutPath), "PilModu-" + Guid.NewGuid().ToString("N") + ".lnk");
+        string temporary = Path.Combine(Path.GetDirectoryName(shortcutPath), "BatteryOptimizer-" + Guid.NewGuid().ToString("N") + ".lnk");
         try
         {
             dynamic shortcut = shell.CreateShortcut(temporary);
-            shortcut.TargetPath = Path.Combine(folder, "PilModu.exe");
+            shortcut.TargetPath = Path.Combine(folder, Product.Executable);
             shortcut.Arguments = "";
             shortcut.WorkingDirectory = folder;
-            shortcut.IconLocation = Path.Combine(folder, "Pil-Modu.ico") + ",0";
-            shortcut.Description = AppName;
+            shortcut.IconLocation = Path.Combine(folder, Product.Executable) + ",0";
+            shortcut.Description = Product.Name;
             shortcut.WindowStyle = 7;
             shortcut.Save();
             AssertShortcutFree(shortcutPath, replaceFromFolder ?? folder);
@@ -396,6 +418,9 @@ internal sealed class SetupWindow : Form
     private readonly Button next = new Button();
     private readonly Button cancel = new Button();
     private readonly Label progress = new Label();
+    private readonly Label languageLabel = new Label();
+    private readonly FlowLayoutPanel languageRow = new FlowLayoutPanel();
+    private readonly ComboBox languages = new ComboBox();
     private readonly CheckBox agreement = new CheckBox();
     private readonly TextBox path = new TextBox();
     private readonly CheckBox readme = new CheckBox();
@@ -405,7 +430,7 @@ internal sealed class SetupWindow : Form
 
     internal SetupWindow()
     {
-        Text = "Pil Modu Kurulumu";
+        Text = UiText.Get("SetupTitle");
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         StartPosition = FormStartPosition.CenterScreen;
         Font = new Font("Segoe UI", 11);
@@ -417,8 +442,9 @@ internal sealed class SetupWindow : Form
         ForeColor = Color.FromArgb(24, 40, 65);
         MaximizeBox = true;
 
-        var frame = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22), RowCount = 4, ColumnCount = 1 };
+        var frame = new TableLayoutPanel { Dock = DockStyle.Fill, Padding = new Padding(22), RowCount = 5, ColumnCount = 1 };
         frame.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        frame.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         frame.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         frame.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         frame.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
@@ -427,27 +453,46 @@ internal sealed class SetupWindow : Form
         progress.AutoSize = true;
         progress.ForeColor = Color.FromArgb(73, 93, 121);
         frame.Controls.Add(progress, 0, 0);
+        languageRow.Dock = DockStyle.Top;
+        languageRow.AutoSize = true;
+        languageRow.WrapContents = false;
+        languageRow.Margin = new Padding(0, 6, 0, 4);
+        languageLabel.AutoSize = true;
+        languageLabel.Margin = new Padding(0, 7, 10, 0);
+        languages.DropDownStyle = ComboBoxStyle.DropDownList;
+        languages.Width = 185;
+        languages.Items.AddRange(UiText.Names);
+        languages.SelectedIndex = Array.IndexOf(UiText.Codes, UiText.Language);
+        languages.SelectedIndexChanged += delegate
+        {
+            if (languages.SelectedIndex < 0) return;
+            UiText.Select(UiText.Codes[languages.SelectedIndex]);
+            agreement.Checked = false;
+            ShowPage(0);
+        };
+        languageRow.Controls.AddRange(new Control[] { languageLabel, languages });
+        frame.Controls.Add(languageRow, 0, 1);
         heading.AutoSize = true;
         heading.Font = new Font("Segoe UI Semibold", 24);
         heading.Margin = new Padding(0, 4, 0, 12);
-        frame.Controls.Add(heading, 0, 1);
+        frame.Controls.Add(heading, 0, 2);
         content.Dock = DockStyle.Fill;
         content.Margin = new Padding(0);
-        frame.Controls.Add(content, 0, 2);
+        frame.Controls.Add(content, 0, 3);
 
         var actions = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft, Dock = DockStyle.Fill, AutoSize = true,
             WrapContents = false, Margin = new Padding(0, 14, 0, 0)
         };
-        ConfigureButton(cancel, "İptal");
-        ConfigureButton(back, "Geri");
-        ConfigureButton(next, "İleri");
+        ConfigureButton(cancel, UiText.Get("Cancel"));
+        ConfigureButton(back, UiText.Get("Back"));
+        ConfigureButton(next, UiText.Get("Next"));
         next.BackColor = Color.FromArgb(25, 61, 109);
         next.ForeColor = Color.White;
         next.UseVisualStyleBackColor = false;
         actions.Controls.AddRange(new Control[] { cancel, next, back });
-        frame.Controls.Add(actions, 0, 3);
+        frame.Controls.Add(actions, 0, 4);
         AcceptButton = next;
         CancelButton = cancel;
         next.Click += Advance;
@@ -460,14 +505,23 @@ internal sealed class SetupWindow : Form
 
     internal void VerifyPages()
     {
-        if (next.Enabled) throw new InvalidOperationException("Agreement must be accepted.");
-        agreement.Checked = true;
-        if (!next.Enabled) throw new InvalidOperationException("Agreement acceptance was not applied.");
-        ShowPage(1);
-        if (step != 1 || next.Text != "Kur") throw new InvalidOperationException("Location page is incomplete.");
-        ShowPage(2);
-        if (next.Text != "Bitir" || !readme.Checked || desktop.Checked)
-            throw new InvalidOperationException("Finish options are incomplete.");
+        for (int i = 0; i < UiText.Codes.Length; i++)
+        {
+            languages.SelectedIndex = i;
+            agreement.Checked = false;
+            ShowPage(0);
+            if (UiText.Language != UiText.Codes[i] || next.Enabled ||
+                Text != UiText.Get("SetupTitle") || heading.Text != UiText.Get("Terms"))
+                throw new InvalidOperationException("The language or agreement was not applied.");
+            agreement.Checked = true;
+            if (!next.Enabled) throw new InvalidOperationException("Agreement acceptance was not applied.");
+            ShowPage(1);
+            if (step != 1 || next.Text != UiText.Get("Install"))
+                throw new InvalidOperationException("Location page is incomplete.");
+            ShowPage(2);
+            if (next.Text != UiText.Get("Finish") || !readme.Checked || desktop.Checked)
+                throw new InvalidOperationException("Finish options are incomplete.");
+        }
     }
 
     protected override void OnLoad(EventArgs args)
@@ -505,64 +559,65 @@ internal sealed class SetupWindow : Form
         var rows = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1 };
         rows.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         content.Controls.Add(rows);
-        progress.Text = string.Format("PİL MODU {0}   /   ADIM {1} / 3", InstallFiles.Version, page + 1);
+        Text = UiText.Get("SetupTitle");
+        progress.Text = UiText.Get("Step", Product.Version, page + 1);
+        languageLabel.Text = UiText.Get("Language");
+        languages.AccessibleName = languageLabel.Text;
+        languageRow.Visible = page == 0;
+        back.Text = UiText.Get("Back");
+        cancel.Text = UiText.Get("Cancel");
         back.Visible = page == 1;
         cancel.Visible = page != 2;
         next.Enabled = page != 0 || agreement.Checked;
 
         if (page == 0)
         {
-            heading.Text = "Kurulum koşulları";
-            next.Text = "İleri";
+            heading.Text = UiText.Get("Terms");
+            next.Text = UiText.Get("Next");
             var terms = new TextBox
             {
                 Dock = DockStyle.Fill, Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical,
                 BackColor = Color.White, Margin = new Padding(0, 0, 0, 10),
-                Text = "Pil Modu, desteklenen Windows cihazlarında ekran ve güç ayarlarını değiştiren bir masaüstü uygulamasıdır.\r\n\r\n" +
-                    "Kurulum, seçtiğin klasöre uygulama dosyalarını ve kaldırıcıyı yazar. Başlat menüsünde kısayol ve Windows Uygulamalar listesinde kaldırma kaydı oluşturur.\r\n\r\n" +
-                    "Dışarı Modu, desteklenen ayarları değiştirirken önceki değerleri bu kullanıcı hesabında saklar. Kaldırmadan önce Normal Mod ile ayarlarını geri yükle. \r\n\r\n" + 
-                    "Bana destek olmak isterseniz GitHub Hesabımı ziyaraet edebilirsiniz: https://github.com/bnsolaris"
+                Text = UiText.Get("TermsBody")
             };
             rows.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             rows.Controls.Add(terms, 0, 0);
-            agreement.Text = "Kurulum koşullarını okudum ve kabul ediyorum.";
+            agreement.Text = UiText.Get("Agree");
             agreement.AutoSize = true;
             rows.Controls.Add(agreement, 0, 1);
         }
         else if (page == 1)
         {
-            heading.Text = "Kurulum konumu";
-            next.Text = "Kur";
+            heading.Text = UiText.Get("Location");
+            next.Text = UiText.Get("Install");
             rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             rows.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            rows.Controls.Add(Description("Pil Modu için yeni veya boş bir klasör seç."), 0, 0);
+            rows.Controls.Add(Description(UiText.Get("ChooseFolder")), 0, 0);
             var picker = new TableLayoutPanel { Dock = DockStyle.Top, AutoSize = true, ColumnCount = 2 };
             picker.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             picker.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             path.Dock = DockStyle.Fill;
-            path.AccessibleName = "Kurulum klasörü";
+            path.AccessibleName = UiText.Get("FolderLabel");
             var browse = new Button();
-            ConfigureButton(browse, "Gözat…");
+            ConfigureButton(browse, UiText.Get("Browse"));
             browse.Click += Browse;
             picker.Controls.Add(path, 0, 0);
             picker.Controls.Add(browse, 1, 0);
             rows.Controls.Add(picker, 0, 1);
-            rows.Controls.Add(Description("Varsayılan konum Program Files klasörüdür. Kurulum ve uygulama yönetici izniyle çalışır."), 0, 2);
+            rows.Controls.Add(Description(UiText.Get("DefaultLocation")), 0, 2);
         }
         else
         {
-            heading.Text = "Kurulum tamamlandı";
-            next.Text = "Bitir";
+            heading.Text = UiText.Get("Installed");
+            next.Text = UiText.Get("Finish");
             for (int i = 0; i < 3; i++) rows.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-            rows.Controls.Add(Description(InstallFiles.RecoveredFolder == null
-                ? "Pil Modu'nu Başlat menüsünden açabilirsin."
-                : "Dosyaları silinen önceki kurulumun kaydı yenilendi. Pil Modu'nu Başlat menüsünden açabilirsin."), 0, 0);
-            readme.Text = "README dosyasını aç";
+            rows.Controls.Add(Description(UiText.Get(InstallFiles.RecoveredFolder == null ? "StartMenu" : "Recovered")), 0, 0);
+            readme.Text = UiText.Get("Readme");
             readme.AutoSize = true;
             readme.Checked = true;
-            desktop.Text = "Masaüstüne kısayol oluştur";
+            desktop.Text = UiText.Get("DesktopShortcut");
             desktop.AutoSize = true;
             rows.Controls.Add(readme, 0, 1);
             rows.Controls.Add(desktop, 0, 2);
@@ -573,9 +628,9 @@ internal sealed class SetupWindow : Form
     {
         using (var picker = new FolderBrowserDialog())
         {
-            picker.Description = "Pil Modu klasörünün oluşturulacağı üst klasörü seç.";
+            picker.Description = UiText.Get("SelectParent");
             if (picker.ShowDialog(this) == DialogResult.OK)
-                path.Text = Path.Combine(picker.SelectedPath, "PilModu");
+                path.Text = Path.Combine(picker.SelectedPath, Product.Name);
         }
     }
 
@@ -606,7 +661,7 @@ internal sealed class SetupWindow : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, step == 2 ? "Son adım tamamlanamadı" : "Kurulum tamamlanamadı",
+            MessageBox.Show(this, ex.Message, UiText.Get(step == 2 ? "FinishFailed" : "SetupFailed"),
                 MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }

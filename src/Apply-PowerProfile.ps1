@@ -1,25 +1,51 @@
 ﻿[CmdletBinding()]
 param(
-    [ValidateSet('Disari', 'Normal', 'Durum')]
-    [string]$Mode = 'Durum',
+    [ValidateSet('Away', 'Normal', 'Status', 'Disari', 'Durum')]
+    [string]$Mode = 'Status',
+
+    [string]$Language,
 
     [ValidateRange(0, 100)]
-    [int]$DisariParlaklik = 30,
+    [Alias('DisariParlaklik')]
+    [int]$AwayBrightness = 30,
 
     [ValidateRange(0, 100)]
-    [int]$DisariSes = 20,
+    [Alias('DisariSes')]
+    [int]$AwayVolume = 20,
 
     [ValidateRange(1, 360)]
-    [int]$DisariHz = 60
+    [Alias('DisariHz')]
+    [int]$AwayRefreshRate = 60,
+
+    [ValidateRange(0, 100)]
+    [int]$AwaySaverThreshold = 100,
+
+    [ValidateSet('Efficiency', 'Balanced', 'Performance')]
+    [string]$AwayPowerMode = 'Efficiency',
+
+    [AllowEmptyCollection()]
+    [ValidateSet('Display', 'Brightness', 'Audio', 'Power', 'Saver', 'Wallpaper')]
+    [string[]]$DisabledSettings = @()
 )
 $ErrorActionPreference = 'Stop'
-if (-not ('PilModu.NativeDisplay' -as [type])) {
+. (Join-Path $PSScriptRoot 'Localization.ps1')
+$translations = Import-Translations $PSScriptRoot $Language
+if ($Mode -eq 'Disari') { $Mode = 'Away' }
+if ($Mode -eq 'Durum') { $Mode = 'Status' }
+if (-not ('BatteryOptimizer.NativeDisplay' -as [type])) {
     Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-namespace PilModu {
+namespace BatteryOptimizer {
+    internal sealed class ProfileException : InvalidOperationException {
+        internal ProfileException(string key, params object[] values) : base(key) {
+            Data["TranslationKey"] = key;
+            Data["TranslationValues"] = values;
+        }
+    }
+
     public static class NativeDisplay {
         public const int ENUM_CURRENT_SETTINGS = -1;
         public const int DISP_CHANGE_SUCCESSFUL = 0;
@@ -117,10 +143,10 @@ namespace PilModu {
             return null;
         }
 
-        public static int SelectRefreshRate(int preferred) {
+        public static int SelectRefreshRate(int preferred, int baseline) {
             var current = NewDevMode();
             if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref current)) return 0;
-            int best = current.dmDisplayFrequency;
+            int best = baseline;
             if (best <= preferred) return best;
             for (int index = 0; ; index++) {
                 var candidate = NewDevMode();
@@ -130,8 +156,8 @@ namespace PilModu {
                     candidate.dmPelsHeight != current.dmPelsHeight ||
                     candidate.dmBitsPerPel != current.dmBitsPerPel ||
                     candidate.dmDisplayFlags != current.dmDisplayFlags ||
-                    frequency <= 1 || frequency >= current.dmDisplayFrequency) continue;
-                if (best == current.dmDisplayFrequency ||
+                    frequency <= 1 || frequency >= baseline) continue;
+                if (best == baseline ||
                     Math.Abs(frequency - preferred) < Math.Abs(best - preferred) ||
                     (Math.Abs(frequency - preferred) == Math.Abs(best - preferred) && frequency < best))
                     best = frequency;
@@ -141,17 +167,17 @@ namespace PilModu {
 
         public static void SetSingleRefreshRate(string displayId, int targetHz) {
             if (displayId == null || displayId != GetSingleDisplayId())
-                throw new InvalidOperationException("Kaydedilen tek ekran bağlı değil.");
+                throw new ProfileException("DisplayChanged");
             var current = NewDevMode();
             if (!EnumDisplaySettings(null, ENUM_CURRENT_SETTINGS, ref current))
-                throw new InvalidOperationException("Ekran ayarı okunamadı.");
+                throw new ProfileException("DisplayRead");
             if (current.dmDisplayFrequency == targetHz) return;
             current.dmFields = DM_DISPLAYFREQUENCY;
             current.dmDisplayFrequency = targetHz;
             if (ChangeDisplaySettingsEx(null, ref current, IntPtr.Zero, 2, IntPtr.Zero) != DISP_CHANGE_SUCCESSFUL ||
                 ChangeDisplaySettingsEx(null, ref current, IntPtr.Zero, 0, IntPtr.Zero) != DISP_CHANGE_SUCCESSFUL ||
                 GetCurrentRefreshRate() != targetHz)
-                throw new InvalidOperationException("Ekran " + targetHz + " Hz değerine geçemedi.");
+                throw new ProfileException("DisplaySet", targetHz);
         }
 
         public static string SetRefreshRate(int targetHz) {
@@ -219,31 +245,31 @@ namespace PilModu {
         public static void SetBestEfficiency() {
             var mode = new Guid("961cc777-2547-4f9d-8174-7d86181b8a7a");
             uint result = PowerSetUserConfiguredDCPowerMode(ref mode);
-            if (result != 0) throw new InvalidOperationException("Güç modu ayarlanamadı. Hata: " + result);
+            if (result != 0) throw new ProfileException("PowerSet", result);
         }
 
         public static Guid GetDCMode() {
             Guid mode;
             uint result = PowerGetUserConfiguredDCPowerMode(out mode);
-            if (result != 0) throw new InvalidOperationException("Pil güç modu okunamadı. Hata: " + result);
+            if (result != 0) throw new ProfileException("PowerRead", result);
             return mode;
         }
 
         public static void SetDCMode(Guid mode) {
             uint result = PowerSetUserConfiguredDCPowerMode(ref mode);
-            if (result != 0) throw new InvalidOperationException("Pil güç modu ayarlanamadı. Hata: " + result);
+            if (result != 0) throw new ProfileException("PowerSet", result);
         }
 
         public static void SetBalanced() {
             var mode = Guid.Empty;
             uint result = PowerSetUserConfiguredDCPowerMode(ref mode);
-            if (result != 0) throw new InvalidOperationException("Güç modu ayarlanamadı. Hata: " + result);
+            if (result != 0) throw new ProfileException("PowerSet", result);
         }
 
         public static Guid GetActiveScheme() {
             IntPtr pointer;
             uint result = PowerGetActiveScheme(IntPtr.Zero, out pointer);
-            if (result != 0) throw new InvalidOperationException("Etkin güç planı okunamadı. Hata: " + result);
+            if (result != 0) throw new ProfileException("SchemeRead", result);
             try { return (Guid)Marshal.PtrToStructure(pointer, typeof(Guid)); }
             finally { LocalFree(pointer); }
         }
@@ -252,7 +278,7 @@ namespace PilModu {
             Guid scheme = GetActiveScheme();
             uint value;
             uint result = PowerReadDCValueIndex(IntPtr.Zero, ref scheme, ref subgroup, ref setting, out value);
-            if (result != 0) throw new InvalidOperationException("DC güç ayarı okunamadı. Hata: " + result);
+            if (result != 0) throw new ProfileException("SettingRead", result);
             return value;
         }
     }
@@ -293,7 +319,7 @@ namespace PilModu {
             uint status, color;
             Marshal.ThrowExceptionForHR(desktop.GetStatus(out status));
             if ((status & 4) != 0)
-                throw new InvalidOperationException("Uzak oturumda duvar kâğıdı değişikliği atlandı.");
+                throw new ProfileException("RemoteWallpaper");
             Marshal.ThrowExceptionForHR(desktop.GetBackgroundColor(out color));
             return new WallpaperState { Color = color, Enabled = (status & 1) != 0 };
         }
@@ -314,7 +340,7 @@ namespace PilModu {
                 Marshal.ThrowExceptionForHR(desktop.Enable(enabled));
                 var actual = ReadState(desktop);
                 if (actual.Color != color || actual.Enabled != enabled)
-                    throw new InvalidOperationException("Windows arka plan değişikliğini uygulamadı.");
+                    throw new ProfileException("WallpaperRejected");
             }
             finally { Marshal.ReleaseComObject(desktop); }
         }
@@ -402,7 +428,7 @@ namespace PilModu {
             var device = Device();
             string id;
             Marshal.ThrowExceptionForHR(device.GetId(out id));
-            if (id != expectedId) throw new InvalidOperationException("Kaydedilen ses çıkışı etkin değil.");
+            if (id != expectedId) throw new ProfileException("AudioUnavailable");
             value = Math.Max(0, Math.Min(1, value));
             Marshal.ThrowExceptionForHR(Endpoint(device).SetMasterVolumeLevelScalar(value, IntPtr.Zero));
         }
@@ -419,6 +445,11 @@ $stateDirectory = Join-Path $env:LOCALAPPDATA 'PilModuProfile'
 $statePath = Join-Path $stateDirectory 'onceki-ayarlar.json'
 $thresholdGroup = [guid]'de830923-a562-41af-a086-e3a2c6bad2da'
 $thresholdSetting = [guid]'e69653ca-cf7f-4f05-aa73-cb833fa90ad4'
+$powerModes = @{
+    Efficiency = '961cc777-2547-4f9d-8174-7d86181b8a7a'
+    Balanced = '00000000-0000-0000-0000-000000000000'
+    Performance = 'ded574b5-45a0-4f42-8737-46345c09c238'
+}
 $steps = [ordered]@{}
 $journal = @{}
 
@@ -438,15 +469,22 @@ function Save-Journal {
     }
 }
 
-function New-Setting($Id, $Label, [scriptblock]$Read, [scriptblock]$Write) {
-    $steps[$Id] = @{ Label = $Label; Read = $Read; Write = $Write }
+function New-Setting($Id, $Label, [scriptblock]$Read, [scriptblock]$Write, [scriptblock]$Describe) {
+    $steps[$Id] = @{ Label = $Label; Read = $Read; Write = $Write; Describe = $Describe }
+}
+
+function Get-PowerModeName([string]$Value) {
+    foreach ($name in $powerModes.Keys) {
+        if ($powerModes[$name] -eq $Value) { return (Get-Text "PowerMode$name") }
+    }
+    return (Get-Text 'PowerModeCustom')
 }
 
 function Test-Battery {
     Add-Type -AssemblyName System.Windows.Forms
     $status = [Windows.Forms.SystemInformation]::PowerStatus.BatteryChargeStatus
     if ($status -eq 'Unknown' -or ($status -band [Windows.Forms.BatteryChargeStatus]::NoSystemBattery)) {
-        throw 'Windows kullanılabilir bir pil bildirmiyor.'
+        throw (Get-Text 'NoBattery')
     }
 }
 
@@ -454,21 +492,21 @@ function Get-PanelBrightness([string]$Id) {
     $panels = @(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness |
         Where-Object { $_.Active -and $_.InstanceName -eq $Id })
     if ($panels.Count -ne 1 -or $null -eq $panels[0].CurrentBrightness) {
-        throw 'Kaydedilen dahili ekranın parlaklığı okunamadı.'
+        throw (Get-Text 'BrightnessUnreadable')
     }
     $brightness = [int]$panels[0].CurrentBrightness
-    if ($brightness -lt 0 -or $brightness -gt 100) { throw 'Ekran geçersiz bir parlaklık değeri bildirdi.' }
+    if ($brightness -lt 0 -or $brightness -gt 100) { throw (Get-Text 'BrightnessInvalid') }
     return $brightness
 }
 
 function Set-PanelBrightness([string]$Id, [int]$Value) {
-    if ($Value -lt 0 -or $Value -gt 100) { throw 'Parlaklık %0 ile %100 arasında olmalı.' }
+    if ($Value -lt 0 -or $Value -gt 100) { throw (Get-Text 'BrightnessRange') }
     # A previous attempt may have applied the setting without a return code.
     # Confirm the actual panel value before issuing another request.
     if ((Get-PanelBrightness $Id) -eq $Value) { return }
     $panel = Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightnessMethods |
         Where-Object { $_.Active -and $_.InstanceName -eq $Id } | Select-Object -First 1
-    if (-not $panel) { throw 'Kaydedilen dahili ekran erişilebilir değil.' }
+    if (-not $panel) { throw (Get-Text 'PanelUnavailable') }
 
     $change = $null
     $methodError = $null
@@ -485,79 +523,108 @@ function Set-PanelBrightness([string]$Id, [int]$Value) {
         if ($actual -eq $Value) { return }
         if ($attempt -lt 10) { Start-Sleep -Milliseconds 100 }
     }
-    if ($methodError) { throw "Parlaklık isteği tamamlanamadı: $methodError" }
+    if ($methodError) { throw (Get-Text 'BrightnessRequest' @($methodError)) }
     if ($null -ne $change -and $null -ne $change.ReturnValue -and $change.ReturnValue -ne 0) {
-        throw "Ekran sürücüsü parlaklık isteğini reddetti ($($change.ReturnValue)). Geçerli parlaklık: %$actual."
+        throw (Get-Text 'BrightnessRejected' @($change.ReturnValue, $actual))
     }
-    throw "Parlaklık doğrulanamadı. İstenen: %$Value; ekrandan okunan: %$actual. Geri yükleme kaydı korundu."
+    throw (Get-Text 'BrightnessMismatch' @($Value, $actual))
 }
 
-New-Setting 'Display' 'Yenileme hızı' {
-    $id = [PilModu.NativeDisplay]::GetSingleDisplayId()
-    if (-not $id) { throw 'Kimliği okunabilen tek bir ekran bağlı olmalı.' }
-    $current = [PilModu.NativeDisplay]::GetCurrentRefreshRate()
-    if ($current -le 1) { throw 'Geçerli hız okunamadı.' }
-    @{ Id = $id; Value = $current; Target = [PilModu.NativeDisplay]::SelectRefreshRate($DisariHz) }
+New-Setting 'Display' (Get-Text 'Display') {
+    param($original)
+    $current = [BatteryOptimizer.NativeDisplay]::GetCurrentRefreshRate()
+    if ($current -le 1) { throw (Get-Text 'DisplayRead') }
+    if ($Mode -eq 'Status') { return @{ Value = $current } }
+    $id = [BatteryOptimizer.NativeDisplay]::GetSingleDisplayId()
+    if (-not $id) { throw (Get-Text 'SingleDisplay') }
+    $baseline = if ($original) { [int]$original.Value } else { $current }
+    @{ Id = $id; Value = $current; Target = [BatteryOptimizer.NativeDisplay]::SelectRefreshRate($AwayRefreshRate, $baseline) }
 } {
     param($entry, $value)
-    [PilModu.NativeDisplay]::SetSingleRefreshRate($entry.Id, [int]$value)
-    Write-Host ('Ekran Heartz Değeri: {0} Hz' -f [PilModu.NativeDisplay]::GetCurrentRefreshRate())
+    [BatteryOptimizer.NativeDisplay]::SetSingleRefreshRate($entry.Id, [int]$value)
+    Write-Host (Get-Text 'DisplayValue' @([BatteryOptimizer.NativeDisplay]::GetCurrentRefreshRate()))
+} {
+    param($value)
+    Get-Text 'DisplayValue' @($value)
 }
 
-New-Setting 'Brightness' 'Parlaklık' {
+New-Setting 'Brightness' (Get-Text 'Brightness') {
+    param($original)
     $panels = @(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBrightness | Where-Object Active)
-    if ($panels.Count -ne 1) { throw 'Windows tek bir dahili ekran için parlaklık kontrolü sunmuyor.' }
-    $levels = @($panels[0].Level | Where-Object { $_ -gt 0 -and $_ -lt $panels[0].CurrentBrightness } |
-        Sort-Object { [math]::Abs([int]$_ - $DisariParlaklik) })
+    if ($panels.Count -ne 1) { throw (Get-Text 'SinglePanel') }
+    if ($null -eq $panels[0].CurrentBrightness) { throw (Get-Text 'BrightnessUnreadable') }
     $current = [int]$panels[0].CurrentBrightness
-    $target = if ($current -gt $DisariParlaklik -and $levels.Count) { [int]$levels[0] } else { $current }
+    if ($current -lt 0 -or $current -gt 100) { throw (Get-Text 'BrightnessInvalid') }
+    if ($Mode -eq 'Status') { return @{ Value = $current } }
+    $baseline = if ($original) { [int]$original.Value } else { $current }
+    $target = $baseline
+    if ($baseline -gt $AwayBrightness) {
+        $levels = @($panels[0].Level | Where-Object { $_ -gt 0 -and $_ -le $baseline } | Sort-Object)
+        $withinLimit = @($levels | Where-Object { $_ -le $AwayBrightness })
+        if ($withinLimit.Count) { $target = [int]$withinLimit[-1] }
+        elseif ($levels.Count) { $target = [int]$levels[0] }
+    }
     @{ Id = $panels[0].InstanceName; Value = $current; Target = $target }
 } {
     param($entry, $value)
     Set-PanelBrightness $entry.Id ([int]$value)
-    Write-Host "Parlaklık: %$value"
+    Write-Host (Get-Text 'BrightnessValue' @($value))
+} {
+    param($value)
+    Get-Text 'BrightnessValue' @($value)
 }
 
-New-Setting 'Audio' 'Ses' {
-    $id = [PilModu.Audio]::GetDeviceId()
-    $current = [PilModu.Audio]::GetVolume()
-    if ($id -ne [PilModu.Audio]::GetDeviceId()) { throw 'Ses çıkışı işlem sırasında değişti.' }
-    @{ Id = $id; Value = $current; Target = [math]::Min($current, $DisariSes / 100.0) }
+New-Setting 'Audio' (Get-Text 'Audio') {
+    param($original)
+    $id = [BatteryOptimizer.Audio]::GetDeviceId()
+    $current = [BatteryOptimizer.Audio]::GetVolume()
+    if ($id -ne [BatteryOptimizer.Audio]::GetDeviceId()) { throw (Get-Text 'AudioChanged') }
+    $baseline = if ($original) { [double]$original.Value } else { $current }
+    @{ Id = $id; Value = $current; Target = [single][math]::Min($baseline, $AwayVolume / 100.0) }
 } {
     param($entry, $value)
-    [PilModu.Audio]::SetDeviceVolume($entry.Id, [single]$value)
-    Write-Host ('Ses: %{0}' -f [math]::Round($value * 100))
+    [BatteryOptimizer.Audio]::SetDeviceVolume($entry.Id, [single]$value)
+    Write-Host (Get-Text 'AudioValue' @([math]::Round($value * 100)))
+} {
+    param($value)
+    Get-Text 'AudioValue' @([math]::Round($value * 100))
 }
 
-New-Setting 'Power' 'Pil güç modu' {
+New-Setting 'Power' (Get-Text 'Power') {
     Test-Battery
-    @{ Value = [PilModu.NativePower]::GetDCMode().ToString(); Target = '961cc777-2547-4f9d-8174-7d86181b8a7a' }
+    @{ Value = [BatteryOptimizer.NativePower]::GetDCMode().ToString(); Target = $powerModes[$AwayPowerMode] }
 } {
     param($entry, $value)
-    [PilModu.NativePower]::SetDCMode([guid]$value)
-    Write-Host 'Pil güç modu ayarlandı.'
+    [BatteryOptimizer.NativePower]::SetDCMode([guid]$value)
+    Write-Host (Get-Text 'PowerValue' @((Get-PowerModeName $value)))
+} {
+    param($value)
+    Get-Text 'PowerValue' @((Get-PowerModeName $value))
 }
 
-New-Setting 'Saver' 'Enerji tasarrufu eşiği' {
+New-Setting 'Saver' (Get-Text 'Saver') {
     Test-Battery
-    $scheme = [PilModu.NativePower]::GetActiveScheme()
-    $value = [PilModu.NativePower]::ReadDCValue($thresholdGroup, $thresholdSetting)
-    if ($scheme -ne [PilModu.NativePower]::GetActiveScheme()) { throw 'Güç planı işlem sırasında değişti.' }
-    @{ Id = $scheme.ToString(); Value = $value; Target = 100 }
+    $scheme = [BatteryOptimizer.NativePower]::GetActiveScheme()
+    $value = [BatteryOptimizer.NativePower]::ReadDCValue($thresholdGroup, $thresholdSetting)
+    if ($scheme -ne [BatteryOptimizer.NativePower]::GetActiveScheme()) { throw (Get-Text 'SchemeChanged') }
+    @{ Id = $scheme.ToString(); Value = $value; Target = $AwaySaverThreshold }
 } {
     param($entry, $value)
-    if ([guid]$entry.Id -ne [PilModu.NativePower]::GetActiveScheme()) {
-        throw 'Geri dönmek için kaydedilen güç planını yeniden seç.'
+    if ([guid]$entry.Id -ne [BatteryOptimizer.NativePower]::GetActiveScheme()) {
+        throw (Get-Text 'SchemeRestore')
     }
     & (Join-Path ([Environment]::SystemDirectory) 'powercfg.exe') /setdcvalueindex $entry.Id $thresholdGroup $thresholdSetting $value | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Windows tasarruf eşiği değişikliğini kabul etmedi.' }
+    if ($LASTEXITCODE -ne 0) { throw (Get-Text 'SaverRejected') }
     & (Join-Path ([Environment]::SystemDirectory) 'powercfg.exe') /setactive $entry.Id | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw 'Windows güç planını yeniden etkinleştiremedi.' }
-    Write-Host "Pilde otomatik tasarruf eşiği: %$value"
+    if ($LASTEXITCODE -ne 0) { throw (Get-Text 'SchemeActivate') }
+    Write-Host (Get-Text 'SaverValue' @($value))
+} {
+    param($value)
+    Get-Text 'SaverValue' @($value)
 }
 
-New-Setting 'Wallpaper' 'Duvar kâğıdı' {
-    $current = [PilModu.NativeWallpaper]::GetState()
+New-Setting 'Wallpaper' (Get-Text 'Wallpaper') {
+    $current = [BatteryOptimizer.NativeWallpaper]::GetState()
     $value = if (-not $current.Enabled -and $current.Color -eq 0) {
         'Black'
     } else {
@@ -567,25 +634,43 @@ New-Setting 'Wallpaper' 'Duvar kâğıdı' {
 } {
     param($entry, $value)
     if ($value -is [string] -and $value -eq 'Black') {
-        [PilModu.NativeWallpaper]::SetBackground(0, $false)
-        Write-Host 'Duvar kâğıdı: siyah arka plan.'
+        [BatteryOptimizer.NativeWallpaper]::SetBackground(0, $false)
+        Write-Host (Get-Text 'WallpaperBlack')
     }
     else {
-        [PilModu.NativeWallpaper]::SetBackground([uint32]$value.Color, [bool]$value.Enabled)
-        Write-Host 'Duvar kâğıdı: önceki arka plan geri yüklendi.'
+        [BatteryOptimizer.NativeWallpaper]::SetBackground([uint32]$value.Color, [bool]$value.Enabled)
+        Write-Host (Get-Text 'WallpaperRestored')
     }
+} {
+    param($value)
+    if ($value -eq 'Black') { return (Get-Text 'WallpaperBlack') }
+    if ($value.Enabled) { return (Get-Text 'WallpaperImage') }
+    Get-Text 'WallpaperSolid'
+}
+
+function Get-ProfileError([Exception]$Problem) {
+    for ($current = $Problem; $null -ne $current; $current = $current.InnerException) {
+        if ($current.Data.Contains('TranslationKey')) {
+            return Get-Text $current.Data['TranslationKey'] $current.Data['TranslationValues']
+        }
+    }
+    return $Problem.Message
 }
 
 function Invoke-Profile {
-    if ($Mode -ne 'Durum' -and (Test-Path -LiteralPath $statePath)) {
+    if ($Mode -eq 'Away' -and -not @($steps.Keys | Where-Object { $_ -notin $DisabledSettings }).Count) {
+        Write-Host (Get-Text 'NoEnabledSettings')
+        return
+    }
+    if ($Mode -ne 'Status' -and (Test-Path -LiteralPath $statePath)) {
         $saved = Get-Content -Raw -LiteralPath $statePath | ConvertFrom-Json
         foreach ($property in $saved.PSObject.Properties) {
-            if (-not $steps.Contains($property.Name)) { throw 'Geri yükleme kaydının sürümü desteklenmiyor.' }
+            if (-not $steps.Contains($property.Name)) { throw (Get-Text 'JournalVersion') }
             $journal[$property.Name] = $property.Value
         }
     }
     if ($Mode -eq 'Normal' -and $journal.Count -eq 0) {
-        Write-Host 'Geri yüklenecek ayar yok.'
+        Write-Host (Get-Text 'NothingToRestore')
         return
     }
 
@@ -593,6 +678,9 @@ function Invoke-Profile {
     $settingIds = if ($Mode -eq 'Normal') {
         # Restore the saver threshold before the configured power mode.
         'Saver', 'Power', 'Audio', 'Brightness', 'Display', 'Wallpaper'
+    } elseif ($Mode -eq 'Away') {
+        'Display', 'Brightness', 'Audio', 'Saver', 'Power', 'Wallpaper' |
+            Where-Object { $steps.Contains($_) -and $_ -notin $DisabledSettings }
     } else { $steps.Keys }
     foreach ($id in $settingIds) {
         $step = $steps[$id]
@@ -604,36 +692,41 @@ function Invoke-Profile {
                 $journal.Remove($id)
                 Save-Journal
             }
-            elseif ($Mode -eq 'Durum') {
+            elseif ($Mode -eq 'Status') {
                 $entry = & $step.Read
-                Write-Host "$($step.Label): kullanılabilir."
+                if ($step.Describe) { Write-Host (& $step.Describe $entry.Value) }
+                else { Write-Host (Get-Text 'Available' @($step.Label)) }
             }
             else {
-                if (-not $journal.ContainsKey($id)) {
-                    $entry = & $step.Read
-                    if ($entry.Value -eq $entry.Target) {
-                        Write-Host "$($step.Label): mevcut değer korundu."
-                        $completed++
-                        continue
-                    }
-                    $journal[$id] = $entry
+                $original = $journal[$id]
+                $current = & $step.Read $original
+                if ($original -and $original.Id -ne $current.Id) {
+                    throw (Get-Text 'ProfileDeviceChanged')
+                }
+                if ($current.Value -eq $current.Target) {
+                    Write-Host (Get-Text 'Unchanged' @($step.Label))
+                    $completed++
+                    continue
+                }
+                if (-not $original) {
+                    $journal[$id] = $current
                     try { Save-Journal }
                     catch { $journal.Remove($id); throw }
                 }
-                $entry = $journal[$id]
-                & $step.Write $entry $entry.Target
+                & $step.Write $journal[$id] $current.Target
             }
             $completed++
         }
         catch {
-            Write-Host "$($step.Label): atlandı. $($_.Exception.Message)"
+            if ($Mode -eq 'Status') { Write-Host (Get-Text 'CurrentUnavailable' @($step.Label)) }
+            else { Write-Host (Get-Text 'Skipped' @($step.Label, (Get-ProfileError $_.Exception))) }
         }
     }
     if ($Mode -eq 'Normal' -and ($journal.Count -gt 0 -or (Test-Path -LiteralPath $statePath))) {
-        throw 'Bazı ayarlar geri yüklenemedi. Kayıt saklandı. Yukarıdaki koşulları sağlayıp tekrar dene.'
+        throw (Get-Text 'PartialRestore')
     }
-    if ($Mode -eq 'Disari' -and $completed -eq 0) {
-        throw 'Bu cihazda profil uygulanamadı.'
+    if ($Mode -eq 'Away' -and $completed -eq 0) {
+        throw (Get-Text 'NoProfile')
     }
 }
 
@@ -642,7 +735,7 @@ $ownsLock = $false
 try {
     try { $ownsLock = $lock.WaitOne(0) }
     catch [Threading.AbandonedMutexException] { $ownsLock = $true }
-    if (-not $ownsLock) { throw 'Başka bir profil işlemi sürüyor.' }
+    if (-not $ownsLock) { throw (Get-Text 'ProfileBusy') }
     Invoke-Profile
 }
 finally {
